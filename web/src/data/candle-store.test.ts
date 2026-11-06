@@ -112,4 +112,99 @@ describe('CandleStore & Validation', () => {
     assert.strictEqual(min, expectedMin);
     assert.strictEqual(max, expectedMax);
   });
+
+  test('block-accelerated getVisibleMinMax matches naive scan on seeded data across all range scales', () => {
+    // Naive reference scan
+    function naiveScan(store: CandleStore, fromIndex: number, toIndex: number): { min: number; max: number } {
+      const start = Math.max(0, Math.floor(fromIndex));
+      const end = Math.min(store.count, Math.ceil(toIndex));
+      if (start >= end) {
+        const idx = Math.min(Math.max(0, start), store.count - 1);
+        return { min: store.low[idx], max: store.high[idx] };
+      }
+      let min = Infinity;
+      let max = -Infinity;
+      for (let i = start; i < end; i++) {
+        if ((store.flags[i] & 1) !== 0) continue;
+        if (store.low[i] < min) min = store.low[i];
+        if (store.high[i] > max) max = store.high[i];
+      }
+      return { min, max };
+    }
+
+    const COUNT = 10_000;
+    const store = new CandleStore(COUNT);
+    const data = generateSyntheticCandles({ count: COUNT, seed: 777 });
+    store.setData(data);
+
+    // Test cases:
+    // 1. Sub-block range (< 256 bars)
+    // 2. Multi-block range spanning full blocks
+    // 3. Range spanning the entire dataset
+    // 4. Random ranges with various alignments
+    const testRanges = [
+      { from: 0, to: COUNT, desc: 'Full dataset range' },
+      { from: 5, to: 45, desc: 'Tiny sub-block range inside block 0' },
+      { from: 250, to: 260, desc: 'Range crossing block boundary (255/256)' },
+      { from: 100, to: 2000, desc: 'Multi-block range with head and tail partials' },
+      { from: 512, to: 1024, desc: 'Exact multiple of block size (aligned)' },
+      { from: 513, to: 1023, desc: 'Unaligned multi-block range' },
+    ];
+
+    // Add 50 pseudo-random ranges
+    let seed = 42;
+    const rng = () => {
+      seed = (seed * 16807) % 2147483647;
+      return (seed - 1) / 2147483646;
+    };
+    for (let r = 0; r < 50; r++) {
+      const idxA = Math.floor(rng() * COUNT);
+      const idxB = Math.floor(rng() * COUNT);
+      const from = Math.min(idxA, idxB);
+      const to = Math.max(idxA, idxB) + 1;
+      testRanges.push({ from, to, desc: `Random range [${from}, ${to})` });
+    }
+
+    for (const r of testRanges) {
+      const naive = naiveScan(store, r.from, r.to);
+      const fast = store.getVisibleMinMax(r.from, r.to);
+
+      assert.strictEqual(
+        fast.min,
+        naive.min,
+        `Min mismatch for ${r.desc}: fast=${fast.min}, naive=${naive.min}`
+      );
+      assert.strictEqual(
+        fast.max,
+        naive.max,
+        `Max mismatch for ${r.desc}: fast=${fast.max}, naive=${naive.max}`
+      );
+    }
+
+    // Verify after append
+    store.append({
+      time: store.time[COUNT - 1] + 60_000,
+      open: 100,
+      high: 99999, // new all-time high
+      low: 0.01,  // new all-time low
+      close: 100,
+      volume: 100,
+    });
+    const afterAppend = store.getVisibleMinMax(0, store.count);
+    assert.strictEqual(afterAppend.max, 99999);
+    assert.strictEqual(afterAppend.min, 0.01);
+
+    // Verify after updateLast
+    store.updateLast({
+      time: store.time[store.count - 1],
+      open: 100,
+      high: 88888, // updated downward
+      low: 0.5,
+      close: 100,
+      volume: 100,
+    });
+    const afterUpdate = store.getVisibleMinMax(0, store.count);
+    assert.strictEqual(afterUpdate.max, 88888);
+    assert.strictEqual(afterUpdate.min, 0.5);
+  });
 });
