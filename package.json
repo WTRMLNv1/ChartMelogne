@@ -1,0 +1,16 @@
+{
+  "name": "chartmelogne-monorepo",
+  "private": true,
+  "workspaces": [
+    "web",
+    "bench"
+  ],
+  "scripts": {
+    "build": "npm run --workspace=web build",
+    "dev": "npm run --workspace=bench dev",
+    "test": "npm run --workspace=web test"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
