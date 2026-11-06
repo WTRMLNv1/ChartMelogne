@@ -52,8 +52,8 @@ export class OverlayRenderer {
     const toPrice = (screenY: number) => yMin + (plotHeightPx - screenY) / yScale;
 
     const lastIdx = store.count - 1;
-    const lastClose = store.close[lastIdx];
-    const lastOpen = store.open[lastIdx];
+    const lastClose = store.getClose(lastIdx);
+    const lastOpen = store.getOpen(lastIdx);
     const isLastUp = lastClose >= lastOpen;
     const lastColor = isLastUp ? (theme.upColorHex ?? '#089981') : (theme.downColorHex ?? '#f23645');
 
@@ -157,10 +157,10 @@ export class OverlayRenderer {
       ctx.fillText(timeLabel, snappedCenterX, tBadgeY + tBadgeH * 0.5);
 
       // 3. Top-left Candle Info Bar (OHLCV)
-      const o = store.open[hoveredBarIndex];
-      const h = store.high[hoveredBarIndex];
-      const l = store.low[hoveredBarIndex];
-      const c = store.close[hoveredBarIndex];
+      const o = store.getOpen(hoveredBarIndex);
+      const h = store.getHigh(hoveredBarIndex);
+      const l = store.getLow(hoveredBarIndex);
+      const c = store.getClose(hoveredBarIndex);
       const v = store.volume[hoveredBarIndex];
       const isUp = c >= o;
       const ohlcColor = isUp ? (theme.upColorHex ?? '#089981') : (theme.downColorHex ?? '#f23645');

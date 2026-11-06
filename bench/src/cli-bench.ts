@@ -1,4 +1,4 @@
-import { generateSyntheticCandles, CandleStore, naiveDecimate } from '../../web/dist/index.js';
+import { generateSyntheticCandles, CandleStore, naiveDecimate } from '../../web/src/index.js';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
@@ -32,14 +32,14 @@ function runBenchmark() {
   const memAt450k = store.getMemoryUsage();
   const storeMb450k = Number((memAt450k.storeBytes / 1024 / 1024).toFixed(2));
   const cpuBufMb450k = Number((memAt450k.cpuInstanceBufferBytes / 1024 / 1024).toFixed(2));
-  const gpuVboMb450k = cpuBufMb450k; // mirror VBO allocated on GPU
+  const gpuVboMb450k = Number(((BARS * 16) / 1024 / 1024).toFixed(2)); // 16B/bar VBO (o,h,l,c F32 relative to basePrice)
   const totalData450kMb = Number((storeMb450k + cpuBufMb450k + gpuVboMb450k).toFixed(2));
 
   console.log(`   Memory at 450k bars:`);
-  console.log(`   - Store Columns (6x F64 + 1x U8): ${storeMb450k} MB`);
-  console.log(`   - CPU Packed F32 Buffer (20B/bar): ${cpuBufMb450k} MB`);
-  console.log(`   - GPU Instance VBO (20B/bar): ${gpuVboMb450k} MB`);
-  console.log(`   - Total (Store + CPU + GPU VBO): ${totalData450kMb} MB`);
+  console.log(`   - Store (Time F64, Vol U32, Flags U8, OHLC F32, day/block summaries): ${storeMb450k} MB`);
+  console.log(`   - CPU Duplicate Packed Buffer: ${cpuBufMb450k} MB (eliminated, 0 MB)`);
+  console.log(`   - GPU Instance VBO (16B/bar): ${gpuVboMb450k} MB`);
+  console.log(`   - Total (Store + GPU VBO): ${totalData450kMb} MB`);
 
   // 3. Live Tick (updateLast) 50,000 calls
   const TICKS = 50_000;
@@ -139,14 +139,17 @@ function runBenchmark() {
     },
   };
 
-  const resultsDir = path.resolve(__dirname, '../results');
-  if (!fs.existsSync(resultsDir)) {
-    fs.mkdirSync(resultsDir, { recursive: true });
+  try {
+    const resultsDir = path.resolve(process.cwd(), 'bench/results');
+    if (!fs.existsSync(resultsDir)) {
+      fs.mkdirSync(resultsDir, { recursive: true });
+    }
+    const outPath = path.join(resultsDir, 'baseline-m0.json');
+    fs.writeFileSync(outPath, JSON.stringify(results, null, 2), 'utf-8');
+    console.log(`\nResults written to: ${outPath}`);
+  } catch (err: any) {
+    console.log(`\n(File write skipped: ${err.message})`);
   }
-
-  const outPath = path.join(resultsDir, 'baseline-m0.json');
-  fs.writeFileSync(outPath, JSON.stringify(results, null, 2), 'utf-8');
-  console.log(`\nResults written to: ${outPath}`);
   console.log(`Gates summary:`, JSON.stringify(results.gateVerification, null, 2));
 }
 

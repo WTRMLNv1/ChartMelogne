@@ -215,16 +215,16 @@ export class Chart {
     this.viewport.setTotalBars(store.count);
 
     if (type === 'full') {
-      this.candleRenderer.uploadData(store.gpuBuffer, store.count);
+      this.candleRenderer.uploadData(store.ohlc, store.count);
       this.fitContent();
     } else if (type === 'append') {
       const wasFollowing = this.viewport.isLastBarVisible();
       if (wasFollowing) {
         this.viewport.fromIndex += 1;
       }
-      this.candleRenderer.uploadData(store.gpuBuffer, store.count);
+      this.candleRenderer.uploadData(store.ohlc, store.count);
     } else if (type === 'updateLast') {
-      this.candleRenderer.updateSubData(store.gpuBuffer, index, 1);
+      this.candleRenderer.updateSubData(store.scratchInstance, index);
     }
 
     this.requestRender();
@@ -384,11 +384,9 @@ export class Chart {
     totalEstimatedBytes: number;
   } {
     let storeColumnsBytes = 0;
-    let cpuInstanceBufferBytes = 0;
     for (const s of this.candleSeriesList) {
       const mem = s.getStore().getMemoryUsage();
       storeColumnsBytes += mem.storeBytes;
-      cpuInstanceBufferBytes += mem.cpuInstanceBufferBytes;
     }
     const gpuMem = this.candleRenderer.getGpuMemoryUsage();
     const gpuVboBytes = gpuMem.totalGpuBytes;
@@ -398,11 +396,11 @@ export class Chart {
       jsHeapBytes = (performance as any).memory.usedJSHeapSize;
     }
 
-    const totalEstimatedBytes = storeColumnsBytes + cpuInstanceBufferBytes + gpuVboBytes;
+    const totalEstimatedBytes = storeColumnsBytes + gpuVboBytes;
 
     return {
       storeColumnsBytes,
-      cpuInstanceBufferBytes,
+      cpuInstanceBufferBytes: 0,
       gpuVboBytes,
       jsHeapBytes,
       totalEstimatedBytes,

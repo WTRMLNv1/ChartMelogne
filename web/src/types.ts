@@ -4,11 +4,11 @@
 
 export interface CandleData {
   time: Float64Array;
-  open: Float64Array;
-  high: Float64Array;
-  low: Float64Array;
-  close: Float64Array;
-  volume: Float64Array;
+  open: Float64Array | Float32Array;
+  high: Float64Array | Float32Array;
+  low: Float64Array | Float32Array;
+  close: Float64Array | Float32Array;
+  volume: Uint32Array | Float64Array;
   flags?: Uint8Array;
 }
 

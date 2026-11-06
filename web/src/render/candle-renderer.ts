@@ -7,10 +7,10 @@ precision highp float;
 // Unit geometry: x = side (-0.5..0.5), y = anchor (0.0..1.0), z = part (0=wick, 1=body)
 in vec3 aUnitVertex;
 
-// Instanced attributes
-in float aBarIndex;
-in vec4 aOHLC; // relative to basePrice
+// Instanced attributes: 16 bytes per candle (open, high, low, close relative to basePrice)
+in vec4 aOHLC;
 
+uniform float uFirstIndex; // bar index corresponding to gl_InstanceID == 0
 uniform float uPxPerBar;
 uniform float uFromIndex;
 uniform vec2 uViewportPx;
@@ -27,8 +27,11 @@ void main() {
   float isUp = float(aOHLC.w >= aOHLC.x);
   vColor = mix(uDownColor, uUpColor, isUp);
 
+  // Compute bar index from gl_InstanceID and uFirstIndex (zero extra attribute!)
+  float barIndex = float(gl_InstanceID) + uFirstIndex;
+
   // Candle horizontal center
-  float centerX = (aBarIndex + 0.5 * uBarsPerNode - uFromIndex) * uPxPerBar;
+  float centerX = (barIndex + 0.5 * uBarsPerNode - uFromIndex) * uPxPerBar;
   centerX = floor(centerX) + 0.5;
 
   // Body and wick dimensions in device pixels
@@ -133,9 +136,9 @@ export class CandleRenderer {
   private instanceVbo: WebGLBuffer;
 
   private aUnitVertexLoc: number;
-  private aBarIndexLoc: number;
   private aOHLCLoc: number;
 
+  private uFirstIndexLoc: WebGLUniformLocation | null;
   private uPxPerBarLoc: WebGLUniformLocation | null;
   private uFromIndexLoc: WebGLUniformLocation | null;
   private uViewportPxLoc: WebGLUniformLocation | null;
@@ -153,9 +156,9 @@ export class CandleRenderer {
     this.program = createProgram(gl, VERTEX_SHADER_SRC, FRAGMENT_SHADER_SRC);
 
     this.aUnitVertexLoc = gl.getAttribLocation(this.program, 'aUnitVertex');
-    this.aBarIndexLoc = gl.getAttribLocation(this.program, 'aBarIndex');
     this.aOHLCLoc = gl.getAttribLocation(this.program, 'aOHLC');
 
+    this.uFirstIndexLoc = gl.getUniformLocation(this.program, 'uFirstIndex');
     this.uPxPerBarLoc = gl.getUniformLocation(this.program, 'uPxPerBar');
     this.uFromIndexLoc = gl.getUniformLocation(this.program, 'uFromIndex');
     this.uViewportPxLoc = gl.getUniformLocation(this.program, 'uViewportPx');
@@ -181,14 +184,11 @@ export class CandleRenderer {
     gl.enableVertexAttribArray(this.aUnitVertexLoc);
     gl.vertexAttribPointer(this.aUnitVertexLoc, 3, gl.FLOAT, false, 0, 0);
 
-    // 2. Dynamic Instance VBO
+    // 2. Dynamic Instance VBO (16 bytes per instance: vec4 aOHLC)
     const instanceVbo = gl.createBuffer();
     if (!instanceVbo) throw new Error('Failed to create instance VBO');
     this.instanceVbo = instanceVbo;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceVbo);
-
-    gl.enableVertexAttribArray(this.aBarIndexLoc);
-    gl.vertexAttribDivisor(this.aBarIndexLoc, 1);
 
     gl.enableVertexAttribArray(this.aOHLCLoc);
     gl.vertexAttribDivisor(this.aOHLCLoc, 1);
@@ -196,26 +196,24 @@ export class CandleRenderer {
     gl.bindVertexArray(null);
   }
 
-  uploadData(gpuBuffer: Float32Array, count: number): void {
+  uploadData(ohlcBuffer: Float32Array, count: number): void {
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceVbo);
 
-    // 5 floats per bar * 4 bytes = 20 bytes per instance
-    const byteLength = count * 20;
+    // 4 floats per bar * 4 bytes = 16 bytes per instance
     if (count > this.allocatedInstanceCapacity) {
-      gl.bufferData(gl.ARRAY_BUFFER, gpuBuffer.subarray(0, count * 5), gl.DYNAMIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, ohlcBuffer.subarray(0, count * 4), gl.DYNAMIC_DRAW);
       this.allocatedInstanceCapacity = count;
     } else {
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, gpuBuffer.subarray(0, count * 5));
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, ohlcBuffer.subarray(0, count * 4));
     }
   }
 
-  updateSubData(gpuBuffer: Float32Array, startIndex: number, count: number = 1): void {
+  updateSubData(scratch4: Float32Array, index: number): void {
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceVbo);
-    const startFloat = startIndex * 5;
-    const endFloat = (startIndex + count) * 5;
-    gl.bufferSubData(gl.ARRAY_BUFFER, startIndex * 20, gpuBuffer.subarray(startFloat, endFloat));
+    // 16 bytes per instance
+    gl.bufferSubData(gl.ARRAY_BUFFER, index * 16, scratch4);
   }
 
   render(params: CandleRenderParams): void {
@@ -252,6 +250,7 @@ export class CandleRenderer {
     const yScale = ySpan > 0 ? viewportHeightPx / ySpan : 1.0;
     const yOffset = yMin - basePrice;
 
+    gl.uniform1f(this.uFirstIndexLoc, firstVisible);
     gl.uniform1f(this.uPxPerBarLoc, pxPerBar);
     gl.uniform1f(this.uFromIndexLoc, fromIndex);
     gl.uniform2f(this.uViewportPxLoc, viewportWidthPx, viewportHeightPx);
@@ -262,12 +261,10 @@ export class CandleRenderer {
     gl.uniform4fv(this.uDownColorLoc, theme.downColor);
     gl.uniform1f(this.uDprLoc, dpr);
 
-    // Bind instance attributes with byte offset for sub-range rendering (Section 7.1)
-    const byteOffset = firstVisible * 20;
+    // Bind instance attributes with byte offset for sub-range rendering (16 bytes per candle)
+    const byteOffset = firstVisible * 16;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceVbo);
-
-    gl.vertexAttribPointer(this.aBarIndexLoc, 1, gl.FLOAT, false, 20, byteOffset);
-    gl.vertexAttribPointer(this.aOHLCLoc, 4, gl.FLOAT, false, 20, byteOffset + 4);
+    gl.vertexAttribPointer(this.aOHLCLoc, 4, gl.FLOAT, false, 16, byteOffset);
 
     // Draw instanced unit triangles: 12 vertices per instance
     gl.drawArraysInstanced(gl.TRIANGLES, 0, 12, instanceCount);
@@ -276,7 +273,8 @@ export class CandleRenderer {
   }
 
   getGpuMemoryUsage(): { instanceVboBytes: number; unitVboBytes: number; totalGpuBytes: number } {
-    const instanceVboBytes = this.allocatedInstanceCapacity * 20;
+    // 16 bytes per instance
+    const instanceVboBytes = this.allocatedInstanceCapacity * 16;
     const unitVboBytes = UNIT_VERTICES.byteLength;
     return {
       instanceVboBytes,

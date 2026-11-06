@@ -34,7 +34,7 @@ describe('CandleStore & Validation', () => {
     assert.strictEqual(err?.index, 4);
   });
 
-  test('setData correctly populates store and packed gpuBuffer', () => {
+  test('setData correctly populates store and packed ohlc buffer', () => {
     const store = new CandleStore(100);
     const data = generateSyntheticCandles({ count: 500, startPrice: 100 });
     store.setData(data);
@@ -43,22 +43,23 @@ describe('CandleStore & Validation', () => {
     assert.ok(store.capacity >= 500);
     assert.strictEqual(store.basePrice, data.close[0]);
 
-    // Check packed GPU buffer
+    // Check packed 16-byte OHLC buffer (4 floats per bar: open, high, low, close)
     const base = store.basePrice;
-    assert.strictEqual(store.gpuBuffer[0], 0); // x
-    assert.strictEqual(Math.fround(store.gpuBuffer[1]), Math.fround(data.open[0] - base));
-    assert.strictEqual(Math.fround(store.gpuBuffer[2]), Math.fround(data.high[0] - base));
-    assert.strictEqual(Math.fround(store.gpuBuffer[3]), Math.fround(data.low[0] - base));
-    assert.strictEqual(Math.fround(store.gpuBuffer[4]), Math.fround(data.close[0] - base));
+    assert.strictEqual(Math.fround(store.ohlc[0]), Math.fround(data.open[0] - base));
+    assert.strictEqual(Math.fround(store.ohlc[1]), Math.fround(data.high[0] - base));
+    assert.strictEqual(Math.fround(store.ohlc[2]), Math.fround(data.low[0] - base));
+    assert.strictEqual(Math.fround(store.ohlc[3]), Math.fround(data.close[0] - base));
 
     // Check last element packed
     const lastIdx = 499;
-    const offset = lastIdx * 5;
-    assert.strictEqual(store.gpuBuffer[offset], lastIdx);
-    assert.strictEqual(Math.fround(store.gpuBuffer[offset + 1]), Math.fround(data.open[lastIdx] - base));
+    const offset = lastIdx * 4;
+    assert.strictEqual(Math.fround(store.ohlc[offset]), Math.fround(data.open[lastIdx] - base));
+    assert.strictEqual(Math.fround(store.ohlc[offset + 1]), Math.fround(data.high[lastIdx] - base));
+    assert.strictEqual(Math.fround(store.ohlc[offset + 2]), Math.fround(data.low[lastIdx] - base));
+    assert.strictEqual(Math.fround(store.ohlc[offset + 3]), Math.fround(data.close[lastIdx] - base));
   });
 
-  test('append and updateLast mutate store and packed buffer in O(1)', () => {
+  test('append and updateLast mutate ohlc and scratchInstance in O(1)', () => {
     const store = new CandleStore(2);
     store.append({
       time: 1000,
@@ -70,7 +71,8 @@ describe('CandleStore & Validation', () => {
     });
     assert.strictEqual(store.count, 1);
     assert.strictEqual(store.basePrice, 102);
-    assert.strictEqual(store.gpuBuffer[0], 0);
+    assert.strictEqual(Math.fround(store.getOpen(0)), 100);
+    assert.strictEqual(Math.fround(store.getHigh(0)), 105);
 
     store.updateLast({
       time: 1000,
@@ -81,9 +83,9 @@ describe('CandleStore & Validation', () => {
       volume: 15,
     });
     assert.strictEqual(store.count, 1);
-    assert.strictEqual(store.high[0], 108);
-    assert.strictEqual(store.close[0], 107);
-    assert.strictEqual(Math.fround(store.gpuBuffer[2]), Math.fround(108 - 102));
+    assert.strictEqual(Math.fround(store.getHigh(0)), 108);
+    assert.strictEqual(Math.fround(store.getClose(0)), 107);
+    assert.strictEqual(Math.fround(store.scratchInstance[1]), Math.fround(108 - 102));
 
     store.append({
       time: 2000,
@@ -94,7 +96,8 @@ describe('CandleStore & Validation', () => {
       volume: 20,
     });
     assert.strictEqual(store.count, 2);
-    assert.strictEqual(store.gpuBuffer[5], 1); // x = 1
+    assert.strictEqual(Math.fround(store.getClose(1)), 109);
+    assert.strictEqual(Math.fround(store.scratchInstance[3]), Math.fround(109 - 102));
   });
 
   test('getVisibleMinMax returns bounds for visible range', () => {
@@ -106,11 +109,60 @@ describe('CandleStore & Validation', () => {
     let expectedMin = Infinity;
     let expectedMax = -Infinity;
     for (let i = 10; i <= 20; i++) {
-      if (data.low[i] < expectedMin) expectedMin = data.low[i];
-      if (data.high[i] > expectedMax) expectedMax = data.high[i];
+      const l = store.getLow(i);
+      const h = store.getHigh(i);
+      if (l < expectedMin) expectedMin = l;
+      if (h > expectedMax) expectedMax = h;
     }
     assert.strictEqual(min, expectedMin);
     assert.strictEqual(max, expectedMax);
+  });
+
+  test('crosshair and tooltip OHLC values match original input within f32 tolerance across high-price instruments (Rs 1,30,000)', () => {
+    const basePrices = [100.0, 2500.0, 25000.0, 130000.0];
+
+    for (const basePrice of basePrices) {
+      const COUNT = 1000;
+      const data = generateSyntheticCandles({
+        count: COUNT,
+        startPrice: basePrice,
+        volatility: 0.002,
+        seed: 42,
+      });
+
+      const store = new CandleStore(COUNT);
+      store.setData(data);
+
+      // Verify each bar reconstructed from store.getBar / getOpen / getClose matches input within f32 relative tolerance
+      for (let i = 0; i < COUNT; i++) {
+        const o = store.getOpen(i);
+        const h = store.getHigh(i);
+        const l = store.getLow(i);
+        const c = store.getClose(i);
+
+        // Sub-paisa resolution: max allowed error < 0.05
+        assert.ok(
+          Math.abs(o - data.open[i]) < 0.05,
+          `Open price error exceeds tolerance at basePrice=${basePrice}, idx=${i}: reconstructed=${o}, original=${data.open[i]}`
+        );
+        assert.ok(
+          Math.abs(h - data.high[i]) < 0.05,
+          `High price error exceeds tolerance at basePrice=${basePrice}, idx=${i}: reconstructed=${h}, original=${data.high[i]}`
+        );
+        assert.ok(
+          Math.abs(l - data.low[i]) < 0.05,
+          `Low price error exceeds tolerance at basePrice=${basePrice}, idx=${i}: reconstructed=${l}, original=${data.low[i]}`
+        );
+        assert.ok(
+          Math.abs(c - data.close[i]) < 0.05,
+          `Close price error exceeds tolerance at basePrice=${basePrice}, idx=${i}: reconstructed=${c}, original=${data.close[i]}`
+        );
+
+        const bar = store.getBar(i);
+        assert.strictEqual(bar.time, data.time[i]);
+        assert.strictEqual(bar.volume, data.volume[i]);
+      }
+    }
   });
 
   test('block-accelerated getVisibleMinMax matches naive scan on seeded data across all range scales', () => {
@@ -120,14 +172,16 @@ describe('CandleStore & Validation', () => {
       const end = Math.min(store.count, Math.ceil(toIndex));
       if (start >= end) {
         const idx = Math.min(Math.max(0, start), store.count - 1);
-        return { min: store.low[idx], max: store.high[idx] };
+        return { min: store.getLow(idx), max: store.getHigh(idx) };
       }
       let min = Infinity;
       let max = -Infinity;
       for (let i = start; i < end; i++) {
         if ((store.flags[i] & 1) !== 0) continue;
-        if (store.low[i] < min) min = store.low[i];
-        if (store.high[i] > max) max = store.high[i];
+        const low = store.getLow(i);
+        const high = store.getHigh(i);
+        if (low < min) min = low;
+        if (high > max) max = high;
       }
       return { min, max };
     }
@@ -191,8 +245,8 @@ describe('CandleStore & Validation', () => {
       volume: 100,
     });
     const afterAppend = store.getVisibleMinMax(0, store.count);
-    assert.strictEqual(afterAppend.max, 99999);
-    assert.strictEqual(afterAppend.min, 0.01);
+    assert.ok(Math.abs(afterAppend.max - 99999) < 0.05);
+    assert.ok(Math.abs(afterAppend.min - 0.01) < 0.05);
 
     // Verify after updateLast
     store.updateLast({
@@ -204,7 +258,7 @@ describe('CandleStore & Validation', () => {
       volume: 100,
     });
     const afterUpdate = store.getVisibleMinMax(0, store.count);
-    assert.strictEqual(afterUpdate.max, 88888);
-    assert.strictEqual(afterUpdate.min, 0.5);
+    assert.ok(Math.abs(afterUpdate.max - 88888) < 0.05);
+    assert.ok(Math.abs(afterUpdate.min - 0.5) < 0.05);
   });
 });

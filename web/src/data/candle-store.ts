@@ -50,28 +50,24 @@ export class CandleStore {
   private _minMaxResult = { min: 0, max: 1 };
 
   time: Float64Array;
-  open: Float64Array;
-  high: Float64Array;
-  low: Float64Array;
-  close: Float64Array;
-  volume: Float64Array;
+  volume: Uint32Array;
   flags: Uint8Array;
 
-  // Packed f32 buffer for WebGL instances: [x, o, h, l, c] relative to basePrice
-  // 5 floats (20 bytes) per bar
-  gpuBuffer: Float32Array;
+  // Single CPU copy of OHLC: interleaved f32 relative to basePrice (16 bytes per candle)
+  // Format per candle: [open - base, high - base, low - base, close - base]
+  ohlc: Float32Array;
+
+  // Small reused scratch array for subdata uploads on append/updateLast (zero allocations)
+  scratchInstance = new Float32Array(4);
 
   constructor(initialCapacity: number = 1024, utcOffsetMinutes: number = 330) {
     this._capacity = Math.max(initialCapacity, 64);
     this.utcOffsetMinutes = utcOffsetMinutes;
     this.time = new Float64Array(this._capacity);
-    this.open = new Float64Array(this._capacity);
-    this.high = new Float64Array(this._capacity);
-    this.low = new Float64Array(this._capacity);
-    this.close = new Float64Array(this._capacity);
-    this.volume = new Float64Array(this._capacity);
+    this.volume = new Uint32Array(this._capacity);
     this.flags = new Uint8Array(this._capacity);
-    this.gpuBuffer = new Float32Array(this._capacity * 5);
+    this.ohlc = new Float32Array(this._capacity * 4);
+
     this.dayStarts = new Uint32Array(Math.max(64, Math.ceil(this._capacity / 100)));
     this.dayCount = 0;
 
@@ -93,15 +89,69 @@ export class CandleStore {
     return this._basePrice;
   }
 
-  getMemoryUsage(): { storeBytes: number; cpuInstanceBufferBytes: number; totalBytes: number } {
-    // 6 columns of Float64 (8 bytes each) + 1 column of Uint8 flags (1 byte)
-    const storeBytes = this._capacity * (6 * 8 + 1);
-    // Packed f32 GPU buffer (5 floats * 4 bytes = 20 bytes per slot)
-    const cpuInstanceBufferBytes = this._capacity * 5 * 4;
+  // Getters reconstructing prices with basePrice
+  getOpen(i: number): number {
+    return this._basePrice + this.ohlc[i * 4];
+  }
+
+  getHigh(i: number): number {
+    return this._basePrice + this.ohlc[i * 4 + 1];
+  }
+
+  getLow(i: number): number {
+    return this._basePrice + this.ohlc[i * 4 + 2];
+  }
+
+  getClose(i: number): number {
+    return this._basePrice + this.ohlc[i * 4 + 3];
+  }
+
+  getBar(i: number): Bar {
+    const off = i * 4;
+    return {
+      time: this.time[i],
+      open: this._basePrice + this.ohlc[off],
+      high: this._basePrice + this.ohlc[off + 1],
+      low: this._basePrice + this.ohlc[off + 2],
+      close: this._basePrice + this.ohlc[off + 3],
+      volume: this.volume[i],
+      flags: this.flags[i],
+    };
+  }
+
+  getMemoryUsage(): {
+    storeBytes: number;
+    cpuInstanceBufferBytes: number;
+    totalBytes: number;
+    details: {
+      timeBytes: number;
+      volumeBytes: number;
+      flagsBytes: number;
+      ohlcBytes: number;
+      dayStartsBytes: number;
+      blockSummaryBytes: number;
+    };
+  } {
+    const timeBytes = this._capacity * 8; // Float64
+    const volumeBytes = this._capacity * 4; // Uint32
+    const flagsBytes = this._capacity * 1; // Uint8
+    const ohlcBytes = this._capacity * 16; // Float32 x 4
+    const dayStartsBytes = this.dayStarts.byteLength;
+    const blockSummaryBytes = this.blockMin.byteLength + this.blockMax.byteLength;
+
+    const storeBytes = timeBytes + volumeBytes + flagsBytes + ohlcBytes + dayStartsBytes + blockSummaryBytes;
     return {
       storeBytes,
-      cpuInstanceBufferBytes,
-      totalBytes: storeBytes + cpuInstanceBufferBytes,
+      cpuInstanceBufferBytes: 0, // ohlc IS the store and IS the buffer uploaded directly
+      totalBytes: storeBytes,
+      details: {
+        timeBytes,
+        volumeBytes,
+        flagsBytes,
+        ohlcBytes,
+        dayStartsBytes,
+        blockSummaryBytes,
+      },
     };
   }
 
@@ -134,10 +184,6 @@ export class CandleStore {
 
     this._count = n;
     this.time.set(data.time.subarray(0, n));
-    this.open.set(data.open.subarray(0, n));
-    this.high.set(data.high.subarray(0, n));
-    this.low.set(data.low.subarray(0, n));
-    this.close.set(data.close.subarray(0, n));
     this.volume.set(data.volume.subarray(0, n));
 
     if (data.flags) {
@@ -147,10 +193,18 @@ export class CandleStore {
     }
 
     // Set basePrice from first bar's close, or 0 if empty
-    this._basePrice = n > 0 ? this.close[0] : 0;
+    const base = n > 0 ? data.close[0] : 0;
+    this._basePrice = base;
 
-    // Pack into gpuBuffer
-    this.rebuildGpuBuffer(0, n);
+    // Pack OHLC relative to basePrice directly into the single interleaved Float32Array
+    let off = 0;
+    for (let i = 0; i < n; i++) {
+      this.ohlc[off] = data.open[i] - base;
+      this.ohlc[off + 1] = data.high[i] - base;
+      this.ohlc[off + 2] = data.low[i] - base;
+      this.ohlc[off + 3] = data.close[i] - base;
+      off += 4;
+    }
 
     // Build dayStarts (bar index of the first bar of each unique local day) in O(n) integer math
     const utcOffsetMs = this.utcOffsetMinutes * 60_000;
@@ -190,13 +244,14 @@ export class CandleStore {
       let bMax = -Infinity;
       for (let i = bStart; i < bEnd; i++) {
         if ((this.flags[i] & 1) !== 0) continue;
-        const l = this.low[i];
-        const h = this.high[i];
+        const iOff = i * 4;
+        const l = base + this.ohlc[iOff + 2];
+        const h = base + this.ohlc[iOff + 1];
         if (l < bMin) bMin = l;
         if (h > bMax) bMax = h;
       }
-      this.blockMin[b] = bMin === Infinity ? (bStart < n ? this.low[bStart] : 0) : bMin;
-      this.blockMax[b] = bMax === -Infinity ? (bStart < n ? this.high[bStart] : 1) : bMax;
+      this.blockMin[b] = bMin === Infinity ? (bStart < n ? base + this.ohlc[bStart * 4 + 2] : 0) : bMin;
+      this.blockMax[b] = bMax === -Infinity ? (bStart < n ? base + this.ohlc[bStart * 4 + 1] : 1) : bMax;
     }
   }
 
@@ -210,15 +265,28 @@ export class CandleStore {
       this._basePrice = bar.close;
     }
 
+    const base = this._basePrice;
     this.time[idx] = bar.time;
-    this.open[idx] = bar.open;
-    this.high[idx] = bar.high;
-    this.low[idx] = bar.low;
-    this.close[idx] = bar.close;
     this.volume[idx] = bar.volume;
     this.flags[idx] = bar.flags ?? 0;
 
-    this.writeGpuInstance(idx);
+    const off = idx * 4;
+    const relO = bar.open - base;
+    const relH = bar.high - base;
+    const relL = bar.low - base;
+    const relC = bar.close - base;
+
+    this.ohlc[off] = relO;
+    this.ohlc[off + 1] = relH;
+    this.ohlc[off + 2] = relL;
+    this.ohlc[off + 3] = relC;
+
+    // Populate reused scratch array for subdata upload
+    this.scratchInstance[0] = relO;
+    this.scratchInstance[1] = relH;
+    this.scratchInstance[2] = relL;
+    this.scratchInstance[3] = relC;
+
     this._count++;
 
     // Update dayStarts
@@ -262,17 +330,30 @@ export class CandleStore {
       return this.append(bar);
     }
     const idx = this._count - 1;
+    const base = this._basePrice;
+
     this.time[idx] = bar.time;
-    this.open[idx] = bar.open;
-    this.high[idx] = bar.high;
-    this.low[idx] = bar.low;
-    this.close[idx] = bar.close;
     this.volume[idx] = bar.volume;
     if (bar.flags !== undefined) {
       this.flags[idx] = bar.flags;
     }
 
-    this.writeGpuInstance(idx);
+    const off = idx * 4;
+    const relO = bar.open - base;
+    const relH = bar.high - base;
+    const relL = bar.low - base;
+    const relC = bar.close - base;
+
+    this.ohlc[off] = relO;
+    this.ohlc[off + 1] = relH;
+    this.ohlc[off + 2] = relL;
+    this.ohlc[off + 3] = relC;
+
+    // Populate reused scratch array for subdata upload
+    this.scratchInstance[0] = relO;
+    this.scratchInstance[1] = relH;
+    this.scratchInstance[2] = relL;
+    this.scratchInstance[3] = relC;
 
     // Keep dayStarts consistent
     const utcOffsetMs = this.utcOffsetMinutes * 60_000;
@@ -289,13 +370,14 @@ export class CandleStore {
     let bMax = -Infinity;
     for (let i = bStart; i < bEnd; i++) {
       if ((this.flags[i] & 1) !== 0) continue;
-      const l = this.low[i];
-      const h = this.high[i];
+      const iOff = i * 4;
+      const l = base + this.ohlc[iOff + 2];
+      const h = base + this.ohlc[iOff + 1];
       if (l < bMin) bMin = l;
       if (h > bMax) bMax = h;
     }
-    this.blockMin[b] = bMin === Infinity ? this.low[idx] : bMin;
-    this.blockMax[b] = bMax === -Infinity ? this.high[idx] : bMax;
+    this.blockMin[b] = bMin === Infinity ? bar.low : bMin;
+    this.blockMax[b] = bMax === -Infinity ? bar.high : bMax;
 
     return idx;
   }
@@ -311,13 +393,16 @@ export class CandleStore {
 
     if (start >= end) {
       const idx = Math.min(Math.max(0, start), this._count - 1);
-      this._minMaxResult.min = this.low[idx];
-      this._minMaxResult.max = this.high[idx];
+      this._minMaxResult.min = this.getLow(idx);
+      this._minMaxResult.max = this.getHigh(idx);
       return this._minMaxResult;
     }
 
     let min = Infinity;
     let max = -Infinity;
+    const base = this._basePrice;
+    const ohlc = this.ohlc;
+    const flags = this.flags;
 
     const startBlock = Math.ceil(start / 256);
     const endBlock = Math.floor(end / 256);
@@ -325,9 +410,10 @@ export class CandleStore {
     if (startBlock >= endBlock) {
       // Small range or within 1-2 blocks: direct scan
       for (let i = start; i < end; i++) {
-        if ((this.flags[i] & 1) !== 0) continue;
-        const l = this.low[i];
-        const h = this.high[i];
+        if ((flags[i] & 1) !== 0) continue;
+        const off = i * 4;
+        const l = base + ohlc[off + 2];
+        const h = base + ohlc[off + 1];
         if (l < min) min = l;
         if (h > max) max = h;
       }
@@ -335,9 +421,10 @@ export class CandleStore {
       // 1. Partial head block at the left edge
       const headEnd = startBlock << 8;
       for (let i = start; i < headEnd; i++) {
-        if ((this.flags[i] & 1) !== 0) continue;
-        const l = this.low[i];
-        const h = this.high[i];
+        if ((flags[i] & 1) !== 0) continue;
+        const off = i * 4;
+        const l = base + ohlc[off + 2];
+        const h = base + ohlc[off + 1];
         if (l < min) min = l;
         if (h > max) max = h;
       }
@@ -355,9 +442,10 @@ export class CandleStore {
       // 3. Partial tail block at the right edge
       const tailStart = endBlock << 8;
       for (let i = tailStart; i < end; i++) {
-        if ((this.flags[i] & 1) !== 0) continue;
-        const l = this.low[i];
-        const h = this.high[i];
+        if ((flags[i] & 1) !== 0) continue;
+        const off = i * 4;
+        const l = base + ohlc[off + 2];
+        const h = base + ohlc[off + 1];
         if (l < min) min = l;
         if (h > max) max = h;
       }
@@ -373,52 +461,24 @@ export class CandleStore {
     return this._minMaxResult;
   }
 
-  private writeGpuInstance(i: number): void {
-    const offset = i * 5;
-    const base = this._basePrice;
-    this.gpuBuffer[offset] = i;
-    this.gpuBuffer[offset + 1] = this.open[i] - base;
-    this.gpuBuffer[offset + 2] = this.high[i] - base;
-    this.gpuBuffer[offset + 3] = this.low[i] - base;
-    this.gpuBuffer[offset + 4] = this.close[i] - base;
-  }
-
-  private rebuildGpuBuffer(start: number, end: number): void {
-    const base = this._basePrice;
-    let offset = start * 5;
-    for (let i = start; i < end; i++) {
-      this.gpuBuffer[offset++] = i;
-      this.gpuBuffer[offset++] = this.open[i] - base;
-      this.gpuBuffer[offset++] = this.high[i] - base;
-      this.gpuBuffer[offset++] = this.low[i] - base;
-      this.gpuBuffer[offset++] = this.close[i] - base;
-    }
-  }
-
   private reallocate(newCap: number): void {
-    const oldCap = this._capacity;
     this._capacity = newCap;
 
-    const copyF64 = (oldArr: Float64Array) => {
-      const next = new Float64Array(newCap);
-      next.set(oldArr.subarray(0, this._count));
-      return next;
-    };
+    const nextTime = new Float64Array(newCap);
+    nextTime.set(this.time.subarray(0, this._count));
+    this.time = nextTime;
 
-    this.time = copyF64(this.time);
-    this.open = copyF64(this.open);
-    this.high = copyF64(this.high);
-    this.low = copyF64(this.low);
-    this.close = copyF64(this.close);
-    this.volume = copyF64(this.volume);
+    const nextVol = new Uint32Array(newCap);
+    nextVol.set(this.volume.subarray(0, this._count));
+    this.volume = nextVol;
 
     const nextFlags = new Uint8Array(newCap);
     nextFlags.set(this.flags.subarray(0, this._count));
     this.flags = nextFlags;
 
-    const nextGpu = new Float32Array(newCap * 5);
-    nextGpu.set(this.gpuBuffer.subarray(0, this._count * 5));
-    this.gpuBuffer = nextGpu;
+    const nextOhlc = new Float32Array(newCap * 4);
+    nextOhlc.set(this.ohlc.subarray(0, this._count * 4));
+    this.ohlc = nextOhlc;
 
     const blockCap = Math.max(16, Math.ceil(newCap / 256));
     if (this.blockMin.length < blockCap) {
