@@ -8,7 +8,7 @@ export class CandleSeries {
   private onDataChanged?: (type: SeriesDataChangeType, index: number) => void;
 
   constructor(options: CandleSeriesOptions = {}, onDataChanged?: (type: SeriesDataChangeType, index: number) => void) {
-    this.store = new CandleStore(options.capacity ?? 1024);
+    this.store = new CandleStore(options.capacity ?? 1024, options.utcOffsetMinutes ?? 330);
     this.onDataChanged = onDataChanged;
   }
 

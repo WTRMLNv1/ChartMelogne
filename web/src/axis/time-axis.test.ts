@@ -78,4 +78,122 @@ describe('TimeAxis & Session Calendar (Section 8.2 & 12.1)', () => {
       assert.ok(ticks[i].barIndex > ticks[i - 1].barIndex);
     }
   });
+
+  test('identical output between precomputed dayStarts and legacy scan across 360 and 375 bars/day datasets', () => {
+    const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    // Legacy O(N) tick generator using Date
+    function generateTicksLegacy(
+      timeArray: Float64Array,
+      count: number,
+      fromIndex: number,
+      barsVisible: number,
+      viewportWidthPx: number,
+      utcOffsetMinutes: number = 330
+    ) {
+      const getLocalParts = (t: number) => {
+        const d = new Date(t + utcOffsetMinutes * 60_000);
+        return {
+          year: d.getUTCFullYear(),
+          month: d.getUTCMonth(),
+          day: d.getUTCDate(),
+          hours: d.getUTCHours(),
+          minutes: d.getUTCMinutes(),
+        };
+      };
+      const isDayBoundary = (i: number) => {
+        if (i <= 0) return true;
+        const p = getLocalParts(timeArray[i - 1]);
+        const c = getLocalParts(timeArray[i]);
+        return p.year !== c.year || p.month !== c.month || p.day !== c.day;
+      };
+      const isMonthBoundary = (i: number) => {
+        if (i <= 0) return true;
+        const p = getLocalParts(timeArray[i - 1]);
+        const c = getLocalParts(timeArray[i]);
+        return p.year !== c.year || p.month !== c.month;
+      };
+
+      const startIdx = Math.max(0, Math.floor(fromIndex));
+      const endIdx = Math.min(count - 1, Math.ceil(fromIndex + barsVisible));
+      const pxPerBar = viewportWidthPx / barsVisible;
+      const visibleTimeSpanMs = timeArray[endIdx] - timeArray[startIdx];
+      const level = visibleTimeSpanMs >= 60 * 24 * 3600_000 ? 'monthly' : visibleTimeSpanMs >= 24 * 3600_000 ? 'daily' : 'intraday';
+      const minBars = Math.max(1, Math.ceil(80 / pxPerBar));
+
+      const ticks = [];
+      let lastTickBar = -Infinity;
+      for (let i = startIdx; i <= endIdx; i++) {
+        const dayStart = isDayBoundary(i);
+        const monthStart = isMonthBoundary(i);
+        const shouldConsider = level === 'monthly' ? monthStart : level === 'daily' ? dayStart : dayStart || (i - lastTickBar >= minBars);
+        if (shouldConsider && i - lastTickBar >= minBars * 0.7) {
+          const { year, month, day, hours, minutes } = getLocalParts(timeArray[i]);
+          let label = '';
+          if (level === 'intraday') {
+            label = dayStart ? `${day} ${MONTH_NAMES[month]}` : `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+          } else if (level === 'daily') {
+            label = monthStart ? `${MONTH_NAMES[month]} '${year.toString().slice(-2)}` : `${day} ${MONTH_NAMES[month]}`;
+          } else {
+            label = `${MONTH_NAMES[month]} ${year}`;
+          }
+          ticks.push({ barIndex: i, label });
+          lastTickBar = i;
+        }
+      }
+      return ticks;
+    }
+
+    const testConfigs = [
+      { barsPerDay: 375, days: 120 },
+      { barsPerDay: 360, days: 120 },
+    ];
+
+    const timeAxis = new TimeAxis({ utcOffsetMinutes: 330 });
+
+    for (const { barsPerDay, days } of testConfigs) {
+      const totalBars = barsPerDay * days;
+      const times = new Float64Array(totalBars);
+      let t = Date.UTC(2025, 0, 1, 3, 45, 0); // 09:15 IST
+      let idx = 0;
+      for (let d = 0; d < days; d++) {
+        for (let b = 0; b < barsPerDay; b++) {
+          times[idx++] = t + b * 60_000;
+        }
+        t += 24 * 3600_000; // next day
+      }
+
+      // Test multiple zoom levels: monthly, daily, and intraday
+      const zoomCases = [
+        { from: 0, visible: totalBars, width: 1920, desc: 'Full zoom-out (monthly)' },
+        { from: totalBars - barsPerDay * 15, visible: barsPerDay * 10, width: 1920, desc: '10 days (daily)' },
+        { from: totalBars - barsPerDay * 3, visible: barsPerDay * 2, width: 1920, desc: '2 days (daily)' },
+        { from: totalBars - 100, visible: 60, width: 1920, desc: '60 bars (intraday)' },
+      ];
+
+      for (const z of zoomCases) {
+        const legacyTicks = generateTicksLegacy(times, totalBars, z.from, z.visible, z.width, 330);
+        const newTicks = timeAxis.generateTicks(times, totalBars, z.from, z.visible, z.width);
+
+        assert.strictEqual(
+          newTicks.length,
+          legacyTicks.length,
+          `Tick count mismatch for ${z.desc} (${barsPerDay} b/d): new=${newTicks.length}, legacy=${legacyTicks.length}`
+        );
+
+        for (let k = 0; k < newTicks.length; k++) {
+          assert.strictEqual(
+            newTicks[k].barIndex,
+            legacyTicks[k].barIndex,
+            `Bar index mismatch at tick ${k} for ${z.desc}`
+          );
+          assert.strictEqual(
+            newTicks[k].label,
+            legacyTicks[k].label,
+            `Label text mismatch at tick ${k} for ${z.desc}`
+          );
+        }
+      }
+    }
+  });
 });

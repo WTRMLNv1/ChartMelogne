@@ -20,6 +20,8 @@ export interface StaticRenderParams {
   yMax: number;
   timeArray: Float64Array;
   barsCount: number;
+  dayStarts?: Uint32Array;
+  dayCount?: number;
   timeAxis: TimeAxis;
   theme: Theme;
   priceOptions?: PriceTickOptions;
@@ -35,6 +37,8 @@ export class StaticAxisRenderer {
       yMax,
       timeArray,
       barsCount,
+      dayStarts,
+      dayCount,
       timeAxis,
       theme,
       priceOptions,
@@ -85,7 +89,7 @@ export class StaticAxisRenderer {
     // 3. Vertical Time Grid & Time Axis Labels
     if (barsCount > 0 && barsVisible > 0) {
       const pxPerBar = plotWidthPx / barsVisible;
-      const timeTicks = timeAxis.generateTicks(timeArray, barsCount, fromIndex, barsVisible, plotWidthPx);
+      const timeTicks = timeAxis.generateTicks(timeArray, barsCount, fromIndex, barsVisible, plotWidthPx, dayStarts, dayCount);
 
       for (const tick of timeTicks) {
         const x = Math.floor((tick.barIndex + 0.5 - fromIndex) * pxPerBar) + 0.5;

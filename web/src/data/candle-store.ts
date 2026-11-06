@@ -37,6 +37,11 @@ export class CandleStore {
   private _count: number = 0;
   private _basePrice: number = 0;
 
+  utcOffsetMinutes: number;
+  dayStarts: Uint32Array;
+  dayCount: number = 0;
+  private lastLocalDay: number = -Infinity;
+
   time: Float64Array;
   open: Float64Array;
   high: Float64Array;
@@ -49,8 +54,9 @@ export class CandleStore {
   // 5 floats (20 bytes) per bar
   gpuBuffer: Float32Array;
 
-  constructor(initialCapacity: number = 1024) {
+  constructor(initialCapacity: number = 1024, utcOffsetMinutes: number = 330) {
     this._capacity = Math.max(initialCapacity, 64);
+    this.utcOffsetMinutes = utcOffsetMinutes;
     this.time = new Float64Array(this._capacity);
     this.open = new Float64Array(this._capacity);
     this.high = new Float64Array(this._capacity);
@@ -59,6 +65,8 @@ export class CandleStore {
     this.volume = new Float64Array(this._capacity);
     this.flags = new Uint8Array(this._capacity);
     this.gpuBuffer = new Float32Array(this._capacity * 5);
+    this.dayStarts = new Uint32Array(Math.max(64, Math.ceil(this._capacity / 100)));
+    this.dayCount = 0;
   }
 
   get count(): number {
@@ -131,6 +139,29 @@ export class CandleStore {
 
     // Pack into gpuBuffer
     this.rebuildGpuBuffer(0, n);
+
+    // Build dayStarts (bar index of the first bar of each unique local day) in O(n) integer math
+    const utcOffsetMs = this.utcOffsetMinutes * 60_000;
+    let dayCap = Math.max(128, Math.ceil(n / 100));
+    if (this.dayStarts.length < dayCap) {
+      this.dayStarts = new Uint32Array(dayCap);
+    }
+    let days = 0;
+    let prevDay = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const localDay = Math.floor((this.time[i] + utcOffsetMs) / 86_400_000);
+      if (localDay !== prevDay) {
+        if (days >= this.dayStarts.length) {
+          const next = new Uint32Array(this.dayStarts.length * 2);
+          next.set(this.dayStarts.subarray(0, days));
+          this.dayStarts = next;
+        }
+        this.dayStarts[days++] = i;
+        prevDay = localDay;
+      }
+    }
+    this.dayCount = days;
+    this.lastLocalDay = prevDay;
   }
 
   append(bar: Bar): number {
@@ -153,6 +184,20 @@ export class CandleStore {
 
     this.writeGpuInstance(idx);
     this._count++;
+
+    // Update dayStarts
+    const utcOffsetMs = this.utcOffsetMinutes * 60_000;
+    const localDay = Math.floor((bar.time + utcOffsetMs) / 86_400_000);
+    if (this.dayCount === 0 || localDay !== this.lastLocalDay) {
+      if (this.dayCount >= this.dayStarts.length) {
+        const next = new Uint32Array(Math.max(128, this.dayStarts.length * 2));
+        next.set(this.dayStarts.subarray(0, this.dayCount));
+        this.dayStarts = next;
+      }
+      this.dayStarts[this.dayCount++] = idx;
+      this.lastLocalDay = localDay;
+    }
+
     return idx;
   }
 
@@ -172,6 +217,14 @@ export class CandleStore {
     }
 
     this.writeGpuInstance(idx);
+
+    // Keep dayStarts consistent
+    const utcOffsetMs = this.utcOffsetMinutes * 60_000;
+    const localDay = Math.floor((bar.time + utcOffsetMs) / 86_400_000);
+    if (this.dayCount > 0 && this.dayStarts[this.dayCount - 1] === idx) {
+      this.lastLocalDay = localDay;
+    }
+
     return idx;
   }
 

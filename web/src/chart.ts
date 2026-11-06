@@ -326,6 +326,8 @@ export class Chart {
       yMax: vp.yMax,
       timeArray: store.time,
       barsCount: count,
+      dayStarts: store.dayStarts,
+      dayCount: store.dayCount,
       timeAxis: this.timeAxis,
       theme: this.theme,
       priceOptions: {

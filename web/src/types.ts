@@ -53,4 +53,5 @@ export interface ChartOptions {
 export interface CandleSeriesOptions {
   capacity?: number;
   pane?: number;
+  utcOffsetMinutes?: number;
 }
