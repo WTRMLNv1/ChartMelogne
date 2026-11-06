@@ -1,5 +1,8 @@
 import { CandleSeries, type SeriesDataChangeType } from './series/candle-series.js';
 import { CandleRenderer } from './render/candle-renderer.js';
+import { StaticAxisRenderer, type ChartLayout } from './render/static-axis-renderer.js';
+import { OverlayRenderer, type CrosshairState } from './render/overlay-renderer.js';
+import { TimeAxis } from './axis/time-axis.js';
 import { Viewport } from './viewport/viewport.js';
 import { InteractionHandler } from './input/interaction-handler.js';
 import { darkTheme } from './themes.js';
@@ -15,23 +18,46 @@ export class Chart {
   private options: ChartOptions;
   private theme: Theme;
 
-  // Stacked canvas layers
+  // Stacked canvas layers (Section 3.3)
+  // 1. Static Layer (Canvas2D) - background, grid, axis labels
   private staticCanvas: HTMLCanvasElement;
   private staticCtx: CanvasRenderingContext2D;
+  private staticRenderer: StaticAxisRenderer;
 
+  // 2. Series Layer (WebGL2) - candles
   private seriesCanvas: HTMLCanvasElement;
   private gl: WebGL2RenderingContext;
   private candleRenderer: CandleRenderer;
 
+  // 3. Overlay Layer (Canvas2D) - crosshair, badges, last-price line
   private overlayCanvas: HTMLCanvasElement;
   private overlayCtx: CanvasRenderingContext2D;
+  private overlayRenderer: OverlayRenderer;
 
+  private timeAxis: TimeAxis;
   private viewport: Viewport;
   private interactionHandler: InteractionHandler;
   private resizeObserver: ResizeObserver;
 
+  private layout: ChartLayout = {
+    widthPx: 800,
+    heightPx: 600,
+    plotWidthPx: 735,
+    plotHeightPx: 572,
+    priceAxisWidthPx: 65,
+    timeAxisHeightPx: 28,
+    dpr: 1,
+  };
+
+  private crosshairState: CrosshairState = {
+    screenX: -1,
+    screenY: -1,
+    active: false,
+  };
+
   private candleSeriesList: CandleSeries[] = [];
   private renderScheduled = false;
+  private overlayScheduled = false;
   private eventListeners: { [K in keyof ChartEventMap]?: Array<ChartEventMap[K]> } = {};
 
   private dpr: number = 1;
@@ -51,8 +77,9 @@ export class Chart {
     const staticCtx = this.staticCanvas.getContext('2d');
     if (!staticCtx) throw new Error('Failed to create 2D context for static layer');
     this.staticCtx = staticCtx;
+    this.staticRenderer = new StaticAxisRenderer();
 
-    // 2. Series canvas (WebGL2)
+    // 2. Series canvas (WebGL2) - positioned over plot area
     this.seriesCanvas = this.createCanvas(2);
     const gl = this.seriesCanvas.getContext('webgl2', {
       alpha: true,
@@ -64,14 +91,18 @@ export class Chart {
     this.gl = gl;
     this.candleRenderer = new CandleRenderer(this.gl);
 
-    // 3. Overlay canvas (Canvas2D)
+    // 3. Overlay canvas (Canvas2D) - covers full chart
     this.overlayCanvas = this.createCanvas(3);
     const overlayCtx = this.overlayCanvas.getContext('2d');
     if (!overlayCtx) throw new Error('Failed to create 2D context for overlay layer');
     this.overlayCtx = overlayCtx;
+    this.overlayRenderer = new OverlayRenderer();
 
-    // Viewport and Interaction
+    // Viewport, TimeAxis and Interaction
     this.viewport = new Viewport();
+    this.timeAxis = new TimeAxis({
+      utcOffsetMinutes: options.utcOffsetMinutes ?? 330,
+    });
     this.updateDpr();
 
     this.interactionHandler = new InteractionHandler(
@@ -88,8 +119,19 @@ export class Chart {
           this.requestRender();
         },
         onPointerMove: (screenX, screenY) => {
+          // Note: screenY from InteractionHandler was bottom-up; convert to top-down for Canvas2D
+          const topDownY = this.layout.heightPx - screenY;
+          this.crosshairState.screenX = screenX;
+          this.crosshairState.screenY = topDownY;
+          this.crosshairState.active = true;
+
           const index = Math.round(this.viewport.screenPxToBarIndex(screenX));
-          this.emit('crosshair', { index, screenX, screenY });
+          this.emit('crosshair', { index, screenX, screenY: topDownY });
+          this.requestOverlayRender();
+        },
+        onPointerLeave: () => {
+          this.crosshairState.active = false;
+          this.requestOverlayRender();
         },
       },
       () => this.dpr
@@ -124,20 +166,39 @@ export class Chart {
     const cssH = Math.max(1, Math.floor(rect.height));
 
     this.updateDpr();
-    const pixelW = Math.round(cssW * this.dpr);
-    const pixelH = Math.round(cssH * this.dpr);
+    const widthPx = Math.round(cssW * this.dpr);
+    const heightPx = Math.round(cssH * this.dpr);
 
-    this.staticCanvas.width = pixelW;
-    this.staticCanvas.height = pixelH;
-    this.seriesCanvas.width = pixelW;
-    this.seriesCanvas.height = pixelH;
-    this.overlayCanvas.width = pixelW;
-    this.overlayCanvas.height = pixelH;
+    const priceAxisWidthPx = Math.round(65 * this.dpr);
+    const timeAxisHeightPx = Math.round(28 * this.dpr);
+    const plotWidthPx = Math.max(1, widthPx - priceAxisWidthPx);
+    const plotHeightPx = Math.max(1, heightPx - timeAxisHeightPx);
 
-    this.viewport.setSize(pixelW, pixelH, this.dpr);
-    this.gl.viewport(0, 0, pixelW, pixelH);
+    this.layout = {
+      widthPx,
+      heightPx,
+      plotWidthPx,
+      plotHeightPx,
+      priceAxisWidthPx,
+      timeAxisHeightPx,
+      dpr: this.dpr,
+    };
 
-    this.renderStatic();
+    // Static and Overlay canvases cover full container
+    this.staticCanvas.width = widthPx;
+    this.staticCanvas.height = heightPx;
+    this.overlayCanvas.width = widthPx;
+    this.overlayCanvas.height = heightPx;
+
+    // Series canvas is styled to cover the plot area
+    this.seriesCanvas.style.width = `${cssW - 65}px`;
+    this.seriesCanvas.style.height = `${cssH - 28}px`;
+    this.seriesCanvas.width = plotWidthPx;
+    this.seriesCanvas.height = plotHeightPx;
+
+    this.viewport.setSize(plotWidthPx, plotHeightPx, this.dpr);
+    this.gl.viewport(0, 0, plotWidthPx, plotHeightPx);
+
     this.requestRender();
   }
 
@@ -159,7 +220,6 @@ export class Chart {
     } else if (type === 'append') {
       const wasFollowing = this.viewport.isLastBarVisible();
       if (wasFollowing) {
-        // Follow-live behavior (Section 6.3)
         this.viewport.fromIndex += 1;
       }
       this.candleRenderer.uploadData(store.gpuBuffer, store.count);
@@ -184,6 +244,14 @@ export class Chart {
 
   getViewport(): Viewport {
     return this.viewport;
+  }
+
+  getLayout(): ChartLayout {
+    return this.layout;
+  }
+
+  getTimeAxis(): TimeAxis {
+    return this.timeAxis;
   }
 
   on<K extends keyof ChartEventMap>(event: K, handler: ChartEventMap[K]): void {
@@ -214,22 +282,96 @@ export class Chart {
       this.renderScheduled = true;
       requestAnimationFrame(() => {
         this.renderScheduled = false;
-        this.render();
+        this.renderAll();
       });
     }
   }
 
-  renderStatic(): void {
-    const ctx = this.staticCtx;
-    ctx.fillStyle = this.theme.background;
-    ctx.fillRect(0, 0, this.staticCanvas.width, this.staticCanvas.height);
+  requestOverlayRender(): void {
+    if (!this.overlayScheduled && !this.renderScheduled) {
+      this.overlayScheduled = true;
+      requestAnimationFrame(() => {
+        this.overlayScheduled = false;
+        this.renderOverlay();
+      });
+    }
   }
 
   renderSync(waitForGpu: boolean = false): void {
-    this.render();
+    this.renderAll();
     if (waitForGpu) {
       this.candleRenderer.finish();
     }
+  }
+
+  private renderAll(): void {
+    if (this.candleSeriesList.length === 0) return;
+    const primarySeries = this.candleSeriesList[0];
+    const store = primarySeries.getStore();
+    const count = store.count;
+    if (count === 0) return;
+
+    const vp = this.viewport;
+
+    // Auto-fit Y from visible range
+    const { min, max } = store.getVisibleMinMax(vp.fromIndex, vp.fromIndex + vp.barsVisible);
+    vp.updateAutoY(min, max);
+
+    // 1. Static layer (Canvas2D) - background, grid, axes
+    this.staticRenderer.render(this.staticCtx, {
+      layout: this.layout,
+      fromIndex: vp.fromIndex,
+      barsVisible: vp.barsVisible,
+      yMin: vp.yMin,
+      yMax: vp.yMax,
+      timeArray: store.time,
+      barsCount: count,
+      timeAxis: this.timeAxis,
+      theme: this.theme,
+      priceOptions: {
+        priceDecimals: this.options.priceDecimals,
+      },
+    });
+
+    // 2. Series layer (WebGL2) - candles
+    const gl = this.gl;
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    this.candleRenderer.render({
+      fromIndex: vp.fromIndex,
+      barsVisible: vp.barsVisible,
+      yMin: vp.yMin,
+      yMax: vp.yMax,
+      basePrice: store.basePrice,
+      totalBars: count,
+      viewportWidthPx: this.layout.plotWidthPx,
+      viewportHeightPx: this.layout.plotHeightPx,
+      dpr: this.dpr,
+      theme: this.theme,
+    });
+
+    // 3. Overlay layer (Canvas2D) - crosshair, badges, last-price line
+    this.renderOverlay();
+  }
+
+  private renderOverlay(): void {
+    if (this.candleSeriesList.length === 0) return;
+    const store = this.candleSeriesList[0].getStore();
+    const vp = this.viewport;
+
+    this.overlayRenderer.render(this.overlayCtx, {
+      layout: this.layout,
+      crosshair: this.crosshairState,
+      store,
+      timeAxis: this.timeAxis,
+      fromIndex: vp.fromIndex,
+      barsVisible: vp.barsVisible,
+      yMin: vp.yMin,
+      yMax: vp.yMax,
+      priceDecimals: this.options.priceDecimals ?? 2,
+      theme: this.theme,
+    });
   }
 
   getMemoryBreakdown(): {
@@ -254,7 +396,6 @@ export class Chart {
       jsHeapBytes = (performance as any).memory.usedJSHeapSize;
     }
 
-    // Total = typed array stores + CPU instance buffer + GPU allocated VBO buffers
     const totalEstimatedBytes = storeColumnsBytes + cpuInstanceBufferBytes + gpuVboBytes;
 
     return {
@@ -264,41 +405,6 @@ export class Chart {
       jsHeapBytes,
       totalEstimatedBytes,
     };
-  }
-
-  private render(): void {
-    const gl = this.gl;
-    const vp = this.viewport;
-
-    // Clear WebGL buffer
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-
-    if (this.candleSeriesList.length === 0) return;
-
-    // In Phase 1 we take the primary series
-    const primarySeries = this.candleSeriesList[0];
-    const store = primarySeries.getStore();
-    const count = store.count;
-    if (count === 0) return;
-
-    // Auto-fit Y from visible range
-    const { min, max } = store.getVisibleMinMax(vp.fromIndex, vp.fromIndex + vp.barsVisible);
-    vp.updateAutoY(min, max);
-
-    // Draw candles
-    this.candleRenderer.render({
-      fromIndex: vp.fromIndex,
-      barsVisible: vp.barsVisible,
-      yMin: vp.yMin,
-      yMax: vp.yMax,
-      basePrice: store.basePrice,
-      totalBars: count,
-      viewportWidthPx: vp.widthPx,
-      viewportHeightPx: vp.heightPx,
-      dpr: this.dpr,
-      theme: this.theme,
-    });
   }
 
   destroy(): void {
