@@ -73,6 +73,18 @@ export class CandleStore {
     return this._basePrice;
   }
 
+  getMemoryUsage(): { storeBytes: number; cpuInstanceBufferBytes: number; totalBytes: number } {
+    // 6 columns of Float64 (8 bytes each) + 1 column of Uint8 flags (1 byte)
+    const storeBytes = this._capacity * (6 * 8 + 1);
+    // Packed f32 GPU buffer (5 floats * 4 bytes = 20 bytes per slot)
+    const cpuInstanceBufferBytes = this._capacity * 5 * 4;
+    return {
+      storeBytes,
+      cpuInstanceBufferBytes,
+      totalBytes: storeBytes + cpuInstanceBufferBytes,
+    };
+  }
+
   setData(data: CandleData, debug: boolean = true): void {
     const n = data.time.length;
     if (

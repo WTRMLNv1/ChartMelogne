@@ -5,7 +5,7 @@ import {
   lightTheme,
   type Theme,
 } from 'chartmln';
-import { MetricsTracker, getWebGLInfo, type BenchmarkReport } from './metrics.js';
+import { MetricsTracker, getWebGLInfo, type BenchmarkReport, type MemoryBreakdown } from './metrics.js';
 import { BenchmarkRunner } from './scenarios.js';
 
 const BAR_COUNT = 450_000;
@@ -16,6 +16,7 @@ const statVisible = document.getElementById('stat-visible') as HTMLElement;
 const statFps = document.getElementById('stat-fps') as HTMLElement;
 const statP95 = document.getElementById('stat-p95') as HTMLElement;
 const statUpload = document.getElementById('stat-upload') as HTMLElement;
+const statTick = document.getElementById('stat-tick') as HTMLElement;
 const statHeap = document.getElementById('stat-heap') as HTMLElement;
 
 const benchOverlay = document.getElementById('bench-overlay') as HTMLElement;
@@ -45,24 +46,24 @@ const metricsTracker = new MetricsTracker();
 const runner = new BenchmarkRunner(chart, candles, container, metricsTracker);
 
 let latestReport: BenchmarkReport | null = null;
-let setDataToPaintMs = 0;
+(window as any).latestReport = null;
+let setDataToFinishMs = 0;
 
-// Generate and upload 450,000 synthetic bars
+// Generate 450k synthetic bars
 console.log(`Generating ${BAR_COUNT} synthetic bars...`);
 const t0 = performance.now();
 const data = generateSyntheticCandles({ count: BAR_COUNT, seed: 1337 });
 const genTime = performance.now() - t0;
 console.log(`Generated ${BAR_COUNT} bars in ${genTime.toFixed(1)} ms`);
 
-// Measure setData to first paint
+// Tightened measurement: setData -> draw -> gl.finish()
 const tUploadStart = performance.now();
 candles.setData(data);
+chart.renderSync(true); // first draw and wait for GPU via gl.finish()
+setDataToFinishMs = Number((performance.now() - tUploadStart).toFixed(2));
 
-requestAnimationFrame(() => {
-  setDataToPaintMs = Number((performance.now() - tUploadStart).toFixed(2));
-  statUpload.textContent = `${setDataToPaintMs} ms`;
-  console.log(`setData to first paint: ${setDataToPaintMs} ms`);
-});
+statUpload.textContent = `${setDataToFinishMs} ms`;
+console.log(`setData + draw + gl.finish(): ${setDataToFinishMs} ms`);
 
 statBars.textContent = BAR_COUNT.toLocaleString();
 
@@ -70,6 +71,34 @@ statBars.textContent = BAR_COUNT.toLocaleString();
 chart.on('visibleRangeChange', (vp) => {
   statVisible.textContent = Math.round(vp.barsVisible).toLocaleString();
 });
+
+// Calculate honest memory breakdown
+function getHonestMemory(): MemoryBreakdown {
+  const mem = chart.getMemoryBreakdown();
+  const toMb = (bytes: number) => Number((bytes / (1024 * 1024)).toFixed(2));
+
+  let jsHeapMb: number | undefined;
+  if ((performance as any).memory?.usedJSHeapSize) {
+    jsHeapMb = toMb((performance as any).memory.usedJSHeapSize);
+  }
+
+  return {
+    storeColumnsMb: toMb(mem.storeColumnsBytes),
+    cpuPackedBufferMb: toMb(mem.cpuInstanceBufferBytes),
+    gpuVboMb: toMb(mem.gpuVboBytes),
+    totalMemoryMb: toMb(mem.totalEstimatedBytes),
+    jsHeapMb,
+  };
+}
+
+const initialMem = getHonestMemory();
+statHeap.textContent = `${initialMem.totalMemoryMb} MB`;
+console.log(`Memory breakdown:`, initialMem);
+
+// Quick tick-to-painted baseline measurement
+const quickTick = runner.measureLiveTickToPainted(50);
+statTick.textContent = `${quickTick.p95Ms} ms`;
+console.log(`Live tick to painted: p50=${quickTick.p50Ms} ms, p95=${quickTick.p95Ms} ms`);
 
 // Periodic HUD update for FPS and Memory
 let hudFrames = 0;
@@ -95,10 +124,8 @@ function hudLoop(now: number) {
     statFps.textContent = `${fps}`;
     statP95.textContent = `${hudP95.toFixed(1)} ms`;
 
-    if ((performance as any).memory?.usedJSHeapSize) {
-      const mb = ((performance as any).memory.usedJSHeapSize / (1024 * 1024)).toFixed(1);
-      statHeap.textContent = `${mb} MB`;
-    }
+    const mem = getHonestMemory();
+    statHeap.textContent = `${mem.totalMemoryMb} MB`;
   }
 
   requestAnimationFrame(hudLoop);
@@ -109,7 +136,6 @@ requestAnimationFrame(hudLoop);
 btnTheme.addEventListener('click', () => {
   currentTheme = currentTheme === darkTheme ? lightTheme : darkTheme;
   document.body.style.background = currentTheme.background;
-  // Chart recreation or theme update
   chart.destroy();
   const nextChart = createChart(container, { theme: currentTheme });
   const nextCandles = nextChart.addCandles({ capacity: 500_000 });
@@ -127,10 +153,6 @@ function showOverlay(title: string) {
   benchScenarioName.textContent = title;
   benchProgress.style.width = '0%';
   benchTimer.textContent = '0s / 10s';
-}
-
-function hideOverlay() {
-  benchOverlay.classList.remove('active');
 }
 
 async function executeSingleScenario(name: string, fn: () => Promise<any>) {
@@ -164,21 +186,35 @@ btnTick.addEventListener('click', () => executeSingleScenario('Live Tick', () =>
 btnAppend.addEventListener('click', () => executeSingleScenario('Append Bar', () => runner.runAppendScenario()));
 btnResize.addEventListener('click', () => executeSingleScenario('Resize Drag', () => runner.runResizeScenario()));
 
-// Run All Scenarios (10s each = 50s total)
+// Run All Scenarios
 btnRunAll.addEventListener('click', async () => {
   setButtonsDisabled(true);
   benchOverlay.classList.add('active');
 
+  const liveTickHist = runner.measureLiveTickToPainted(300);
+  const appendHist = runner.measureAppendToPainted(100);
+  const memoryBreakdown = getHonestMemory();
+
   const report: BenchmarkReport = {
     timestamp: new Date().toISOString(),
-    gitCommit: 'm0-baseline',
+    gitCommit: 'm0-tightened-baseline',
     userAgent: navigator.userAgent,
     platform: navigator.platform,
     dpr: window.devicePixelRatio,
     windowSize: { width: window.innerWidth, height: window.innerHeight },
     gpuRenderer: getWebGLInfo(),
     barsCount: BAR_COUNT,
-    setDataToPaintMs,
+    setDataToPaintMs: setDataToFinishMs,
+    setDataToFinishMs: setDataToFinishMs,
+    liveTickToPainted: liveTickHist,
+    appendLatency: appendHist,
+    memory: memoryBreakdown,
+    gateVerification: {
+      setDataTarget150ms: setDataToFinishMs < 150 ? 'PASSED' : 'FAILED',
+      liveTickTarget4ms: liveTickHist.p95Ms < 4.0 ? 'PASSED' : 'FAILED',
+      appendTarget1ms: appendHist.p95Ms < 1.0 ? 'PASSED' : 'FAILED',
+      memoryTarget60mb: memoryBreakdown.totalMemoryMb < 60 ? 'PASSED' : 'FAILED',
+    },
     scenarios: {},
   };
 
@@ -206,10 +242,11 @@ btnRunAll.addEventListener('click', async () => {
     const result = await sc.fn();
     clearInterval(timer);
     report.scenarios[result.scenarioName] = result;
-    benchOutput.textContent = JSON.stringify(report.scenarios, null, 2);
+    benchOutput.textContent = JSON.stringify(report, null, 2);
   }
 
   latestReport = report;
+  (window as any).latestReport = report;
   btnExport.disabled = false;
   setButtonsDisabled(false);
   benchScenarioName.textContent = 'All Benchmarks Complete!';

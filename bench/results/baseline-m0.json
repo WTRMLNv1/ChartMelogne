@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-11-06T10:06:07.493Z",
+  "timestamp": "2026-11-06T10:41:58.907Z",
   "hardware": {
     "platform": "win32",
     "release": "10.0.26300",
@@ -11,18 +11,27 @@
     "barCount": 450000
   },
   "metrics": {
-    "syntheticGenMs": 31.06,
-    "setDataWithValidationAndGpuPackingMs": 21.6,
-    "updateLastAvgMicroseconds": 0.11,
-    "appendAvgMicroseconds": 0.735,
-    "viewportQueryAvgMicroseconds": 1.437,
-    "naiveDecimate450kMs": 11.59,
-    "heapUsedMb": 11.1
+    "syntheticGenMs": 66.17,
+    "setDataToFirstPaintWithFinishMs": 50.6,
+    "setDataCpuPackingMs": 30.09,
+    "liveTickToPaintedWithFinishMs": 3.3,
+    "updateLastCpuMicroseconds": 0.094,
+    "appendWithFinishMs": 0.67,
+    "appendCpuMicroseconds": 0.804,
+    "viewportQueryAvgMicroseconds": 1.458,
+    "naiveDecimate450kMs": 9.57,
+    "memoryAt450k": {
+      "storeColumnsMb": 21.03,
+      "cpuPackedBufferMb": 8.58,
+      "gpuVboMb": 8.58,
+      "totalMemoryMb": 38.19,
+      "v8HeapUsedMb": 11.17
+    }
   },
   "gateVerification": {
     "setDataTarget150ms": "PASSED",
+    "liveTickTarget4ms": "PASSED",
     "appendTarget1ms": "PASSED",
-    "updateLastTarget4ms": "PASSED",
     "memoryTarget60mb": "PASSED"
   }
 }

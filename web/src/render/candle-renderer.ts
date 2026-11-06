@@ -275,6 +275,20 @@ export class CandleRenderer {
     gl.bindVertexArray(null);
   }
 
+  getGpuMemoryUsage(): { instanceVboBytes: number; unitVboBytes: number; totalGpuBytes: number } {
+    const instanceVboBytes = this.allocatedInstanceCapacity * 20;
+    const unitVboBytes = UNIT_VERTICES.byteLength;
+    return {
+      instanceVboBytes,
+      unitVboBytes,
+      totalGpuBytes: instanceVboBytes + unitVboBytes,
+    };
+  }
+
+  finish(): void {
+    this.gl.finish();
+  }
+
   destroy(): void {
     const gl = this.gl;
     gl.deleteBuffer(this.unitVbo);

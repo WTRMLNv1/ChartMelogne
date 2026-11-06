@@ -219,10 +219,51 @@ export class Chart {
     }
   }
 
-  private renderStatic(): void {
+  renderStatic(): void {
     const ctx = this.staticCtx;
     ctx.fillStyle = this.theme.background;
     ctx.fillRect(0, 0, this.staticCanvas.width, this.staticCanvas.height);
+  }
+
+  renderSync(waitForGpu: boolean = false): void {
+    this.render();
+    if (waitForGpu) {
+      this.candleRenderer.finish();
+    }
+  }
+
+  getMemoryBreakdown(): {
+    storeColumnsBytes: number;
+    cpuInstanceBufferBytes: number;
+    gpuVboBytes: number;
+    jsHeapBytes?: number;
+    totalEstimatedBytes: number;
+  } {
+    let storeColumnsBytes = 0;
+    let cpuInstanceBufferBytes = 0;
+    for (const s of this.candleSeriesList) {
+      const mem = s.getStore().getMemoryUsage();
+      storeColumnsBytes += mem.storeBytes;
+      cpuInstanceBufferBytes += mem.cpuInstanceBufferBytes;
+    }
+    const gpuMem = this.candleRenderer.getGpuMemoryUsage();
+    const gpuVboBytes = gpuMem.totalGpuBytes;
+
+    let jsHeapBytes: number | undefined;
+    if (typeof performance !== 'undefined' && (performance as any).memory?.usedJSHeapSize) {
+      jsHeapBytes = (performance as any).memory.usedJSHeapSize;
+    }
+
+    // Total = typed array stores + CPU instance buffer + GPU allocated VBO buffers
+    const totalEstimatedBytes = storeColumnsBytes + cpuInstanceBufferBytes + gpuVboBytes;
+
+    return {
+      storeColumnsBytes,
+      cpuInstanceBufferBytes,
+      gpuVboBytes,
+      jsHeapBytes,
+      totalEstimatedBytes,
+    };
   }
 
   private render(): void {
