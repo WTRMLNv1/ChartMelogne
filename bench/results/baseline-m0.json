@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-11-06T10:04:35.502Z",
+  "hardware": {
+    "platform": "win32",
+    "release": "10.0.26300",
+    "arch": "x64",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-1145G7 @ 2.60GHz",
+    "totalMemoryGb": 7.4
+  },
+  "dataset": {
+    "barCount": 450000
+  },
+  "metrics": {
+    "syntheticGenMs": 74.32,
+    "setDataWithValidationAndGpuPackingMs": 28.51,
+    "updateLastAvgMicroseconds": 0.161,
+    "appendAvgMicroseconds": 1.453,
+    "viewportQueryAvgMicroseconds": 1.474,
+    "naiveDecimate450kMs": 10.38,
+    "heapUsedMb": 11.16
+  },
+  "gateVerification": {
+    "setDataTarget150ms": "PASSED",
+    "appendTarget1ms": "PASSED",
+    "updateLastTarget4ms": "PASSED",
+    "memoryTarget60mb": "PASSED"
+  }
+}
