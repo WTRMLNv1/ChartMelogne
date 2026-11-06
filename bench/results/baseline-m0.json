@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-11-06T10:04:35.502Z",
+  "timestamp": "2026-11-06T10:06:07.493Z",
   "hardware": {
     "platform": "win32",
     "release": "10.0.26300",
@@ -11,13 +11,13 @@
     "barCount": 450000
   },
   "metrics": {
-    "syntheticGenMs": 74.32,
-    "setDataWithValidationAndGpuPackingMs": 28.51,
-    "updateLastAvgMicroseconds": 0.161,
-    "appendAvgMicroseconds": 1.453,
-    "viewportQueryAvgMicroseconds": 1.474,
-    "naiveDecimate450kMs": 10.38,
-    "heapUsedMb": 11.16
+    "syntheticGenMs": 31.06,
+    "setDataWithValidationAndGpuPackingMs": 21.6,
+    "updateLastAvgMicroseconds": 0.11,
+    "appendAvgMicroseconds": 0.735,
+    "viewportQueryAvgMicroseconds": 1.437,
+    "naiveDecimate450kMs": 11.59,
+    "heapUsedMb": 11.1
   },
   "gateVerification": {
     "setDataTarget150ms": "PASSED",
