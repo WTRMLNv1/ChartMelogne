@@ -2,6 +2,8 @@ export { Chart, createChart } from './chart.js';
 export { CandleSeries } from './series/candle-series.js';
 export { CandleStore, validateCandleData } from './data/candle-store.js';
 export { generateSyntheticCandles, createRng } from './data/synthetic.js';
+export { naiveDecimate, type DecimatedCandle } from './data/naive-decimator.js';
+export { Canvas2dReferenceRenderer, type Canvas2dRenderParams } from './render/canvas2d-reference-renderer.js';
 export { Viewport } from './viewport/viewport.js';
 export { darkTheme, lightTheme } from './themes.js';
 export * from './types.js';
