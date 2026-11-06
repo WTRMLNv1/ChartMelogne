@@ -49,7 +49,7 @@ export class BenchmarkRunner {
   measureLiveTickToPainted(samples: number = 500): LatencyHistogram {
     const store = this.series.getStore();
     const lastIdx = store.count - 1;
-    let baseClose = store.close[lastIdx];
+    let baseClose = store.getClose(lastIdx);
     const latencies: number[] = [];
 
     // Warm up
@@ -57,9 +57,9 @@ export class BenchmarkRunner {
       baseClose += 0.05;
       this.series.updateLast({
         time: store.time[lastIdx],
-        open: store.open[lastIdx],
-        high: Math.max(store.high[lastIdx], baseClose),
-        low: Math.min(store.low[lastIdx], baseClose),
+        open: store.getOpen(lastIdx),
+        high: Math.max(store.getHigh(lastIdx), baseClose),
+        low: Math.min(store.getLow(lastIdx), baseClose),
         close: baseClose,
         volume: store.volume[lastIdx] + 1,
       });
@@ -69,13 +69,13 @@ export class BenchmarkRunner {
     for (let i = 0; i < samples; i++) {
       const delta = (Math.random() - 0.49) * 0.5;
       baseClose += delta;
-      const h = Math.max(store.high[lastIdx], baseClose);
-      const l = Math.min(store.low[lastIdx], baseClose);
+      const h = Math.max(store.getHigh(lastIdx), baseClose);
+      const l = Math.min(store.getLow(lastIdx), baseClose);
 
       const t0 = performance.now();
       this.series.updateLast({
         time: store.time[lastIdx],
-        open: store.open[lastIdx],
+        open: store.getOpen(lastIdx),
         high: h,
         low: l,
         close: baseClose,
@@ -93,7 +93,7 @@ export class BenchmarkRunner {
   measureAppendToPainted(samples: number = 200): LatencyHistogram {
     const store = this.series.getStore();
     let lastTime = store.time[store.count - 1];
-    let lastClose = store.close[store.count - 1];
+    let lastClose = store.getClose(store.count - 1);
     const latencies: number[] = [];
 
     for (let i = 0; i < samples; i++) {
@@ -156,7 +156,7 @@ export class BenchmarkRunner {
   async runLiveTickScenario(durationMs: number = 10_000): Promise<BenchmarkScenarioResult> {
     const store = this.series.getStore();
     const lastIdx = store.count - 1;
-    let baseClose = store.close[lastIdx];
+    let baseClose = store.getClose(lastIdx);
     let tickCount = 0;
 
     const latencyHist = this.measureLiveTickToPainted(200);
@@ -170,12 +170,12 @@ export class BenchmarkRunner {
           tickCount++;
           const delta = (Math.random() - 0.49) * 0.5;
           baseClose += delta;
-          const currentHigh = Math.max(store.high[lastIdx], baseClose);
-          const currentLow = Math.min(store.low[lastIdx], baseClose);
+          const currentHigh = Math.max(store.getHigh(lastIdx), baseClose);
+          const currentLow = Math.min(store.getLow(lastIdx), baseClose);
 
           this.series.updateLast({
             time: store.time[lastIdx],
-            open: store.open[lastIdx],
+            open: store.getOpen(lastIdx),
             high: currentHigh,
             low: currentLow,
             close: baseClose,
@@ -191,7 +191,7 @@ export class BenchmarkRunner {
   async runAppendScenario(durationMs: number = 10_000): Promise<BenchmarkScenarioResult> {
     const store = this.series.getStore();
     let lastTime = store.time[store.count - 1];
-    let lastClose = store.close[store.count - 1];
+    let lastClose = store.getClose(store.count - 1);
     let appendsDone = 0;
 
     const appendHist = this.measureAppendToPainted(100);
