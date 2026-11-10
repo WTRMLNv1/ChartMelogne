@@ -1,0 +1,484 @@
+{
+  "zoomed_in_intraday": {
+    "fromIndex": 500,
+    "barsVisible": 50,
+    "viewportState": {
+      "fromIndex": 500,
+      "barsVisible": 50,
+      "yMin": 2330.372785547469,
+      "yMax": 2366.309414270613,
+      "yMode": "auto"
+    },
+    "visibleRange": {
+      "first": 498,
+      "last": 552
+    },
+    "minMax": {
+      "min": 2332.006268671248,
+      "max": 2364.675931146834
+    },
+    "priceTicks": [
+      {
+        "price": 2332,
+        "label": "2332.00"
+      },
+      {
+        "price": 2334,
+        "label": "2334.00"
+      },
+      {
+        "price": 2336,
+        "label": "2336.00"
+      },
+      {
+        "price": 2338,
+        "label": "2338.00"
+      },
+      {
+        "price": 2340,
+        "label": "2340.00"
+      },
+      {
+        "price": 2342,
+        "label": "2342.00"
+      },
+      {
+        "price": 2344,
+        "label": "2344.00"
+      },
+      {
+        "price": 2346,
+        "label": "2346.00"
+      },
+      {
+        "price": 2348,
+        "label": "2348.00"
+      },
+      {
+        "price": 2350,
+        "label": "2350.00"
+      },
+      {
+        "price": 2352,
+        "label": "2352.00"
+      },
+      {
+        "price": 2354,
+        "label": "2354.00"
+      },
+      {
+        "price": 2356,
+        "label": "2356.00"
+      },
+      {
+        "price": 2358,
+        "label": "2358.00"
+      },
+      {
+        "price": 2360,
+        "label": "2360.00"
+      },
+      {
+        "price": 2362,
+        "label": "2362.00"
+      },
+      {
+        "price": 2364,
+        "label": "2364.00"
+      },
+      {
+        "price": 2366,
+        "label": "2366.00"
+      }
+    ],
+    "timeTicks": [
+      {
+        "barIndex": 500,
+        "timeMs": 1577900100000,
+        "label": "23:05",
+        "isMajor": false
+      },
+      {
+        "barIndex": 505,
+        "timeMs": 1577900400000,
+        "label": "23:10",
+        "isMajor": false
+      },
+      {
+        "barIndex": 510,
+        "timeMs": 1577900700000,
+        "label": "23:15",
+        "isMajor": false
+      },
+      {
+        "barIndex": 515,
+        "timeMs": 1577901000000,
+        "label": "23:20",
+        "isMajor": false
+      },
+      {
+        "barIndex": 520,
+        "timeMs": 1577901300000,
+        "label": "23:25",
+        "isMajor": false
+      },
+      {
+        "barIndex": 525,
+        "timeMs": 1577901600000,
+        "label": "23:30",
+        "isMajor": false
+      },
+      {
+        "barIndex": 530,
+        "timeMs": 1577901900000,
+        "label": "23:35",
+        "isMajor": false
+      },
+      {
+        "barIndex": 535,
+        "timeMs": 1577902200000,
+        "label": "23:40",
+        "isMajor": false
+      },
+      {
+        "barIndex": 540,
+        "timeMs": 1577902500000,
+        "label": "23:45",
+        "isMajor": false
+      },
+      {
+        "barIndex": 545,
+        "timeMs": 1577902800000,
+        "label": "23:50",
+        "isMajor": false
+      },
+      {
+        "barIndex": 550,
+        "timeMs": 1577903100000,
+        "label": "23:55",
+        "isMajor": false
+      }
+    ]
+  },
+  "medium_daily": {
+    "fromIndex": 1000,
+    "barsVisible": 400,
+    "viewportState": {
+      "fromIndex": 1000,
+      "barsVisible": 400,
+      "yMin": 2138.1397769720293,
+      "yMax": 2227.8250919134357,
+      "yMode": "auto"
+    },
+    "visibleRange": {
+      "first": 998,
+      "last": 1402
+    },
+    "minMax": {
+      "min": 2142.2163821966387,
+      "max": 2223.7484866888262
+    },
+    "priceTicks": [
+      {
+        "price": 2140,
+        "label": "2140.00"
+      },
+      {
+        "price": 2150,
+        "label": "2150.00"
+      },
+      {
+        "price": 2160,
+        "label": "2160.00"
+      },
+      {
+        "price": 2170,
+        "label": "2170.00"
+      },
+      {
+        "price": 2180,
+        "label": "2180.00"
+      },
+      {
+        "price": 2190,
+        "label": "2190.00"
+      },
+      {
+        "price": 2200,
+        "label": "2200.00"
+      },
+      {
+        "price": 2210,
+        "label": "2210.00"
+      },
+      {
+        "price": 2220,
+        "label": "2220.00"
+      }
+    ],
+    "timeTicks": [
+      {
+        "barIndex": 1000,
+        "timeMs": 1577930100000,
+        "label": "07:25",
+        "isMajor": false
+      },
+      {
+        "barIndex": 1035,
+        "timeMs": 1577932200000,
+        "label": "08:00",
+        "isMajor": false
+      },
+      {
+        "barIndex": 1070,
+        "timeMs": 1577934300000,
+        "label": "08:35",
+        "isMajor": false
+      },
+      {
+        "barIndex": 1105,
+        "timeMs": 1577936400000,
+        "label": "09:10",
+        "isMajor": false
+      },
+      {
+        "barIndex": 1140,
+        "timeMs": 1577938500000,
+        "label": "09:45",
+        "isMajor": false
+      },
+      {
+        "barIndex": 1175,
+        "timeMs": 1577940600000,
+        "label": "10:20",
+        "isMajor": false
+      },
+      {
+        "barIndex": 1210,
+        "timeMs": 1577942700000,
+        "label": "10:55",
+        "isMajor": false
+      },
+      {
+        "barIndex": 1245,
+        "timeMs": 1577944800000,
+        "label": "11:30",
+        "isMajor": false
+      },
+      {
+        "barIndex": 1280,
+        "timeMs": 1577946900000,
+        "label": "12:05",
+        "isMajor": false
+      },
+      {
+        "barIndex": 1315,
+        "timeMs": 1577949000000,
+        "label": "12:40",
+        "isMajor": false
+      },
+      {
+        "barIndex": 1350,
+        "timeMs": 1577951100000,
+        "label": "13:15",
+        "isMajor": false
+      },
+      {
+        "barIndex": 1385,
+        "timeMs": 1577953200000,
+        "label": "13:50",
+        "isMajor": false
+      }
+    ]
+  },
+  "wide_multiweek": {
+    "fromIndex": 2000,
+    "barsVisible": 2500,
+    "viewportState": {
+      "fromIndex": 2000,
+      "barsVisible": 2500,
+      "yMin": 1970.5186038763263,
+      "yMax": 2227.49442174742,
+      "yMode": "auto"
+    },
+    "visibleRange": {
+      "first": 1998,
+      "last": 4502
+    },
+    "minMax": {
+      "min": 1982.1993228704669,
+      "max": 2215.8137027532794
+    },
+    "priceTicks": [
+      {
+        "price": 1980,
+        "label": "1980.00"
+      },
+      {
+        "price": 2000,
+        "label": "2000.00"
+      },
+      {
+        "price": 2020,
+        "label": "2020.00"
+      },
+      {
+        "price": 2040,
+        "label": "2040.00"
+      },
+      {
+        "price": 2060,
+        "label": "2060.00"
+      },
+      {
+        "price": 2080,
+        "label": "2080.00"
+      },
+      {
+        "price": 2100,
+        "label": "2100.00"
+      },
+      {
+        "price": 2120,
+        "label": "2120.00"
+      },
+      {
+        "price": 2140,
+        "label": "2140.00"
+      },
+      {
+        "price": 2160,
+        "label": "2160.00"
+      },
+      {
+        "price": 2180,
+        "label": "2180.00"
+      },
+      {
+        "price": 2200,
+        "label": "2200.00"
+      },
+      {
+        "price": 2220,
+        "label": "2220.00"
+      }
+    ],
+    "timeTicks": [
+      {
+        "barIndex": 3435,
+        "timeMs": 1578076200000,
+        "label": "4 Jan",
+        "isMajor": false
+      }
+    ]
+  },
+  "full_zoom_out": {
+    "fromIndex": 0,
+    "barsVisible": 10000,
+    "viewportState": {
+      "fromIndex": 0,
+      "barsVisible": 10000,
+      "yMin": 1955.7789362222888,
+      "yMax": 2537.027442482207,
+      "yMode": "auto"
+    },
+    "visibleRange": {
+      "first": 0,
+      "last": 9999
+    },
+    "minMax": {
+      "min": 1982.1993228704669,
+      "max": 2510.607055834029
+    },
+    "priceTicks": [
+      {
+        "price": 2000,
+        "label": "2000.00"
+      },
+      {
+        "price": 2050,
+        "label": "2050.00"
+      },
+      {
+        "price": 2100,
+        "label": "2100.00"
+      },
+      {
+        "price": 2150,
+        "label": "2150.00"
+      },
+      {
+        "price": 2200,
+        "label": "2200.00"
+      },
+      {
+        "price": 2250,
+        "label": "2250.00"
+      },
+      {
+        "price": 2300,
+        "label": "2300.00"
+      },
+      {
+        "price": 2350,
+        "label": "2350.00"
+      },
+      {
+        "price": 2400,
+        "label": "2400.00"
+      },
+      {
+        "price": 2450,
+        "label": "2450.00"
+      },
+      {
+        "price": 2500,
+        "label": "2500.00"
+      }
+    ],
+    "timeTicks": [
+      {
+        "barIndex": 0,
+        "timeMs": 1577870100000,
+        "label": "Jan '20",
+        "isMajor": true
+      },
+      {
+        "barIndex": 1995,
+        "timeMs": 1577989800000,
+        "label": "3 Jan",
+        "isMajor": false
+      },
+      {
+        "barIndex": 3435,
+        "timeMs": 1578076200000,
+        "label": "4 Jan",
+        "isMajor": false
+      },
+      {
+        "barIndex": 4875,
+        "timeMs": 1578162600000,
+        "label": "5 Jan",
+        "isMajor": false
+      },
+      {
+        "barIndex": 6315,
+        "timeMs": 1578249000000,
+        "label": "6 Jan",
+        "isMajor": false
+      },
+      {
+        "barIndex": 7755,
+        "timeMs": 1578335400000,
+        "label": "7 Jan",
+        "isMajor": false
+      },
+      {
+        "barIndex": 9195,
+        "timeMs": 1578421800000,
+        "label": "8 Jan",
+        "isMajor": false
+      }
+    ]
+  }
+}

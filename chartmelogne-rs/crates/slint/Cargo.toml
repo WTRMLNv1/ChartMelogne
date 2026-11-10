@@ -1,0 +1,8 @@
+[package]
+name = "chartmelogne-slint"
+version = "0.1.0"
+edition = "2021"
+license-file = "../../LICENSE"
+
+[dependencies]
+chartmelogne-core = { path = "../core" }
