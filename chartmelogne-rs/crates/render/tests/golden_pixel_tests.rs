@@ -120,6 +120,9 @@ fn test_golden_pixel_parity() {
                     b: 0.0,
                     a: 0.0,
                 }),
+                grid_color: None,
+                horizontal_grid_y: Vec::new(),
+                vertical_grid_x: Vec::new(),
             };
 
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

@@ -1,0 +1,313 @@
+export struct PriceTickUi {
+    y_px: length,
+    label: string,
+}
+
+export struct TimeTickUi {
+    x_px: length,
+    label: string,
+}
+
+export component AppWindow inherits Window {
+    title: "ChartMelogne - Rust + wgpu 30";
+    min-width: 900px;
+    min-height: 550px;
+    default-font-family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+    background: #131722;
+
+    // Viewport image & dimensions
+    in-out property <image> chart_texture;
+    in-out property <length> plot_width <=> plot_area.width;
+    in-out property <length> plot_height <=> plot_area.height;
+
+    // Axis Ticks
+    in-out property <[PriceTickUi]> price_ticks: [];
+    in-out property <[TimeTickUi]> time_ticks: [];
+
+    // Crosshair State
+    in-out property <bool> crosshair_active: false;
+    in-out property <length> crosshair_x: 0px;
+    in-out property <length> crosshair_y: 0px;
+    in-out property <length> crosshair_snapped_x: 0px;
+    in-out property <string> crosshair_price: "";
+    in-out property <string> crosshair_time: "";
+
+    // Last Price
+    in-out property <bool> last_price_visible: true;
+    in-out property <length> last_price_y: 0px;
+    in-out property <string> last_price_str: "";
+    in-out property <color> last_price_color: #089981;
+
+    // Top-Left HUD (OHLCV)
+    in-out property <bool> hud_active: false;
+    in-out property <string> hud_open: "";
+    in-out property <string> hud_high: "";
+    in-out property <string> hud_low: "";
+    in-out property <string> hud_close: "";
+    in-out property <string> hud_volume: "";
+    in-out property <color> hud_ohlc_color: #089981;
+
+    // Callbacks to Rust
+    callback pointer_moved(length, length);
+    callback pointer_left();
+    callback drag_started(length, length);
+    callback dragged(length, length);
+    callback scrolled(length, length); // delta_y, cursor_x
+
+    // Main layout
+    GridLayout {
+        spacing: 0px;
+        padding: 0px;
+
+        // TOP-LEFT: Plot Viewport Area (fills available width and height)
+        plot_area := Rectangle {
+            row: 0;
+            col: 0;
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            clip: true;
+            background: #131722;
+
+            // 1. wgpu Candle & Grid Texture
+            Image {
+                width: 100%;
+                height: 100%;
+                source: root.chart_texture;
+            }
+
+            // 2. Last price horizontal line
+            if root.last_price_visible && root.last_price_y >= 0px && root.last_price_y <= self.height : Rectangle {
+                x: 0px;
+                y: root.last_price_y - 0.5px;
+                width: 100%;
+                height: 1px;
+                background: root.last_price_color.with-alpha(0.7);
+            }
+
+            // 3. Crosshair Lines
+            if root.crosshair_active : Rectangle {
+                // Vertical crosshair line
+                Rectangle {
+                    x: root.crosshair_snapped_x - 0.5px;
+                    y: 0px;
+                    width: 1px;
+                    height: 100%;
+                    background: #9598a1.with-alpha(0.6);
+                }
+                // Horizontal crosshair line
+                Rectangle {
+                    x: 0px;
+                    y: root.crosshair_y - 0.5px;
+                    width: 100%;
+                    height: 1px;
+                    background: #9598a1.with-alpha(0.6);
+                }
+            }
+
+            // 4. Top-Left HUD (OHLCV)
+            if root.hud_active : HorizontalLayout {
+                x: 12px;
+                y: 10px;
+                spacing: 8px;
+
+                HorizontalLayout {
+                    spacing: 3px;
+                    Text { text: "O"; color: #787b86; font-size: 11px; }
+                    Text { text: root.hud_open; color: root.hud_ohlc_color; font-size: 11px; font-weight: 500; }
+                }
+                HorizontalLayout {
+                    spacing: 3px;
+                    Text { text: "H"; color: #787b86; font-size: 11px; }
+                    Text { text: root.hud_high; color: root.hud_ohlc_color; font-size: 11px; font-weight: 500; }
+                }
+                HorizontalLayout {
+                    spacing: 3px;
+                    Text { text: "L"; color: #787b86; font-size: 11px; }
+                    Text { text: root.hud_low; color: root.hud_ohlc_color; font-size: 11px; font-weight: 500; }
+                }
+                HorizontalLayout {
+                    spacing: 3px;
+                    Text { text: "C"; color: #787b86; font-size: 11px; }
+                    Text { text: root.hud_close; color: root.hud_ohlc_color; font-size: 11px; font-weight: 500; }
+                }
+                HorizontalLayout {
+                    spacing: 3px;
+                    Text { text: "Vol"; color: #787b86; font-size: 11px; }
+                    Text { text: root.hud_volume; color: #787b86; font-size: 11px; font-weight: 500; }
+                }
+            }
+
+            // 5. Interaction Layer (Pan, Zoom, Hover)
+            TouchArea {
+                width: 100%;
+                height: 100%;
+
+                moved => {
+                    if (self.pressed) {
+                        root.dragged(self.mouse-x, self.mouse-y);
+                    } else {
+                        root.pointer_moved(self.mouse-x, self.mouse-y);
+                    }
+                }
+
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.drag_started(self.mouse-x, self.mouse-y);
+                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                        root.pointer_moved(self.mouse-x, self.mouse-y);
+                    }
+                }
+
+                scroll-event(event) => {
+                    root.scrolled(event.delta-y, self.mouse-x);
+                    EventResult.accept
+                }
+
+                // If pointer leaves TouchArea
+                // Slint doesn't have an explicit pointer-leave event, but pointer_left can be triggered on edge or cancel
+            }
+        }
+
+        // TOP-RIGHT: Price Axis (65px wide)
+        price_gutter := Rectangle {
+            row: 0;
+            col: 1;
+            width: 65px;
+            background: #131722;
+            clip: true;
+
+            // Border left separator
+            Rectangle {
+                x: 0px;
+                y: 0px;
+                width: 1px;
+                height: 100%;
+                background: #242732;
+            }
+
+            // Price Tick Labels
+            for tick in root.price_ticks : Text {
+                x: 6px;
+                y: tick.y_px - 6px;
+                text: tick.label;
+                color: #787b86;
+                font-size: 11px;
+                horizontal-alignment: left;
+            }
+
+            // Last Price Badge
+            if root.last_price_visible && root.last_price_y >= 0px && root.last_price_y <= self.height : Rectangle {
+                x: 2px;
+                y: root.last_price_y - 9px;
+                width: 58px;
+                height: 18px;
+                border-radius: 3px;
+                background: root.last_price_color;
+
+                Text {
+                    text: root.last_price_str;
+                    color: #ffffff;
+                    font-size: 10px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Crosshair Price Badge
+            if root.crosshair_active && root.crosshair_y >= 0px && root.crosshair_y <= self.height : Rectangle {
+                x: 2px;
+                y: root.crosshair_y - 9px;
+                width: 58px;
+                height: 18px;
+                border-radius: 3px;
+                background: #363a45;
+
+                Text {
+                    text: root.crosshair_price;
+                    color: #ffffff;
+                    font-size: 10px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // BOTTOM-LEFT: Time Axis (28px high)
+        time_gutter := Rectangle {
+            row: 1;
+            col: 0;
+            height: 28px;
+            background: #131722;
+            clip: true;
+
+            // Border top separator
+            Rectangle {
+                x: 0px;
+                y: 0px;
+                width: 100%;
+                height: 1px;
+                background: #242732;
+            }
+
+            // Time Tick Labels
+            for tick in root.time_ticks : Text {
+                x: tick.x_px - 30px;
+                y: 7px;
+                width: 60px;
+                text: tick.label;
+                color: #787b86;
+                font-size: 11px;
+                horizontal-alignment: center;
+            }
+
+            // Crosshair Time Badge
+            if root.crosshair_active : Rectangle {
+                x: root.crosshair_snapped_x - 35px;
+                y: 4px;
+                width: 70px;
+                height: 18px;
+                border-radius: 3px;
+                background: #363a45;
+
+                Text {
+                    text: root.crosshair_time;
+                    color: #ffffff;
+                    font-size: 10px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // BOTTOM-RIGHT: Corner Junction (65px x 28px)
+        Rectangle {
+            row: 1;
+            col: 1;
+            background: #131722;
+
+            Rectangle {
+                x: 0px;
+                y: 0px;
+                width: 100%;
+                height: 1px;
+                background: #242732;
+            }
+            Rectangle {
+                x: 0px;
+                y: 0px;
+                width: 1px;
+                height: 100%;
+                background: #242732;
+            }
+
+            Text {
+                text: "UTC+5:30";
+                color: #787b86.with-alpha(0.6);
+                font-size: 10px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

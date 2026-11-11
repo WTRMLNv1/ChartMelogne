@@ -7,6 +7,7 @@ license-file = "../../LICENSE"
 [dependencies]
 chartmelogne-core = { path = "../core" }
 chartmelogne-render = { path = "../render" }
+chartmelogne-slint = { path = "../slint" }
 wgpu = "30"
 pollster = "0.4"
 serde = { version = "1.0", features = ["derive"] }

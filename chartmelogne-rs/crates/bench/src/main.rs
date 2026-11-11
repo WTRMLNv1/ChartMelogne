@@ -107,8 +107,9 @@ fn main() {
     let mode = args.get(1).map(|s| s.as_str()).unwrap_or("headless");
 
     if mode == "window" {
-        println!("\n[Notice] Window mode with Slint visual overlay will be available in milestone R4.");
-        println!("Run 'cargo run -p bench --release -- headless' to execute the headless benchmark gates & scenarios.");
+        println!("\nOpening ChartMelogne Slint Window Mode (450,000 candles)...");
+        chartmelogne_slint::run_chart_app(chartmelogne_slint::ChartAppConfig::default())
+            .expect("Slint window failed to run");
         return;
     }
 

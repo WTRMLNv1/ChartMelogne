@@ -1,4 +1,4 @@
-//! Candle renderer ported from TypeScript/WebGL2 to wgpu 30 + WGSL.
+//! Candle and grid renderer ported from TypeScript/WebGL2 to wgpu 30 + WGSL.
 
 use wgpu::util::DeviceExt;
 
@@ -23,6 +23,7 @@ pub const UNIT_VERTICES: [f32; 36] = [
 ];
 
 pub const CANDLE_SHADER_SRC: &str = include_str!("candle.wgsl");
+pub const GRID_SHADER_SRC: &str = include_str!("grid.wgsl");
 
 /// 64-byte uniform buffer layout matching std140 / WGSL rules
 #[repr(C)]
@@ -39,6 +40,14 @@ pub struct CandleUniforms {
     pub down_color: [f32; 4],  // offset 48
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GridUniforms {
+    pub viewport_px: [f32; 2],
+    pub _padding: [f32; 2],
+    pub color: [f32; 4],
+}
+
 /// Rendering parameters passed per frame
 #[derive(Clone, Debug)]
 pub struct ViewParams {
@@ -52,6 +61,29 @@ pub struct ViewParams {
     pub up_color: [f32; 4],
     pub down_color: [f32; 4],
     pub clear_color: Option<wgpu::Color>,
+    pub grid_color: Option<[f32; 4]>,
+    pub horizontal_grid_y: Vec<f32>,
+    pub vertical_grid_x: Vec<f32>,
+}
+
+impl Default for ViewParams {
+    fn default() -> Self {
+        Self {
+            from_index: 0.0,
+            px_per_bar: 10.0,
+            y_min: 0.0,
+            y_max: 100.0,
+            base_price: 0.0,
+            count: 0,
+            dpr: 1.0,
+            up_color: [0.03, 0.65, 0.55, 1.0],
+            down_color: [0.95, 0.25, 0.33, 1.0],
+            clear_color: None,
+            grid_color: None,
+            horizontal_grid_y: Vec::new(),
+            vertical_grid_x: Vec::new(),
+        }
+    }
 }
 
 pub struct ChartRenderer {
@@ -63,6 +95,12 @@ pub struct ChartRenderer {
     unit_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
+
+    grid_pipeline: wgpu::RenderPipeline,
+    grid_uniform_buffer: wgpu::Buffer,
+    grid_bind_group: wgpu::BindGroup,
+    grid_vertex_buffer: wgpu::Buffer,
+    grid_vertex_capacity: usize,
 
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
@@ -76,6 +114,7 @@ pub struct ChartRenderer {
 
 impl ChartRenderer {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
+        // 1. Candle pipeline
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Candle Shader"),
             source: wgpu::ShaderSource::Wgsl(CANDLE_SHADER_SRC.into()),
@@ -192,6 +231,104 @@ impl ChartRenderer {
             cache: None,
         });
 
+        // 2. Grid pipeline
+        let grid_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Grid Shader"),
+            source: wgpu::ShaderSource::Wgsl(GRID_SHADER_SRC.into()),
+        });
+
+        let grid_uniform_size = std::mem::size_of::<GridUniforms>() as u64;
+        let grid_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Grid Uniform Buffer"),
+            size: grid_uniform_size,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let grid_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Grid Uniform BGL"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(grid_uniform_size),
+                    },
+                    count: None,
+                }],
+            });
+
+        let grid_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Grid Uniform Bind Group"),
+            layout: &grid_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: grid_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        let grid_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Grid Pipeline Layout"),
+                bind_group_layouts: &[Some(&grid_bind_group_layout)],
+                immediate_size: 0,
+            });
+
+        let grid_vertex_layouts = [Some(wgpu::VertexBufferLayout {
+            array_stride: 8,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x2,
+                offset: 0,
+                shader_location: 0,
+            }],
+        })];
+
+        let grid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Grid Render Pipeline"),
+            layout: Some(&grid_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &grid_shader,
+                entry_point: Some("vs_grid"),
+                compilation_options: Default::default(),
+                buffers: &grid_vertex_layouts,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &grid_shader,
+                entry_point: Some("fs_grid"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let grid_vertex_capacity = 256;
+        let grid_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Grid Vertex Buffer"),
+            size: (grid_vertex_capacity * 8) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // 3. Texture setup
         let plot_width = 1;
         let plot_height = 1;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -220,6 +357,11 @@ impl ChartRenderer {
             unit_buffer,
             uniform_buffer,
             uniform_bind_group,
+            grid_pipeline,
+            grid_uniform_buffer,
+            grid_bind_group,
+            grid_vertex_buffer,
+            grid_vertex_capacity,
             instance_buffer,
             instance_capacity: initial_capacity,
             instance_count: 0,
@@ -342,7 +484,7 @@ impl ChartRenderer {
         }
     }
 
-    /// Render candles into the target texture.
+    /// Render grid and candles into the target texture.
     pub fn render(&mut self, encoder: &mut wgpu::CommandEncoder, view: &ViewParams) {
         if self.plot_width == 0 || self.plot_height == 0 {
             return;
@@ -353,6 +495,73 @@ impl ChartRenderer {
             None => wgpu::LoadOp::Load,
         };
 
+        // --- GRID PASS SETUP ---
+        let mut grid_vertex_count = 0usize;
+        if let Some(grid_col) = view.grid_color {
+            let mut vertices: Vec<[f32; 2]> = Vec::new();
+            let pw = self.plot_width as f32;
+            let ph = self.plot_height as f32;
+
+            // Horizontal lines
+            for &y in &view.horizontal_grid_y {
+                let y0 = (y - 0.5).floor();
+                let y1 = y0 + 1.0;
+                vertices.extend_from_slice(&[
+                    [0.0, y0],
+                    [pw, y0],
+                    [pw, y1],
+                    [0.0, y0],
+                    [pw, y1],
+                    [0.0, y1],
+                ]);
+            }
+
+            // Vertical lines
+            for &x in &view.vertical_grid_x {
+                let x0 = (x - 0.5).floor();
+                let x1 = x0 + 1.0;
+                vertices.extend_from_slice(&[
+                    [x0, 0.0],
+                    [x1, 0.0],
+                    [x1, ph],
+                    [x0, 0.0],
+                    [x1, ph],
+                    [x0, ph],
+                ]);
+            }
+
+            grid_vertex_count = vertices.len();
+            if grid_vertex_count > 0 {
+                if grid_vertex_count > self.grid_vertex_capacity {
+                    let new_cap = grid_vertex_count.next_power_of_two();
+                    self.grid_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("Grid Vertex Buffer (Expanded)"),
+                        size: (new_cap * 8) as u64,
+                        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    });
+                    self.grid_vertex_capacity = new_cap;
+                }
+                self.queue.write_buffer(
+                    &self.grid_vertex_buffer,
+                    0,
+                    bytemuck::cast_slice(&vertices),
+                );
+
+                let grid_uniforms = GridUniforms {
+                    viewport_px: [pw, ph],
+                    _padding: [0.0, 0.0],
+                    color: grid_col,
+                };
+                self.queue.write_buffer(
+                    &self.grid_uniform_buffer,
+                    0,
+                    bytemuck::bytes_of(&grid_uniforms),
+                );
+            }
+        }
+
+        // --- CANDLE PASS SETUP ---
         let bars_visible = if view.px_per_bar > 0.0 {
             (self.plot_width as f32) / view.px_per_bar
         } else {
@@ -364,9 +573,9 @@ impl ChartRenderer {
             .min(view.count as isize - 1)
             .max(0) as u32;
 
-        let should_draw = view.count > 0 && first <= last && (first as usize) < view.count;
+        let should_draw_candles = view.count > 0 && first <= last && (first as usize) < view.count;
 
-        if should_draw {
+        if should_draw_candles {
             let y_span = view.y_max - view.y_min;
             let y_scale = if y_span > 0.0 {
                 (self.plot_height as f32) / y_span
@@ -392,9 +601,10 @@ impl ChartRenderer {
                 .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
         }
 
+        // --- COMBINED RENDER PASS ---
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Candle Render Pass"),
+                label: Some("Chart Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.texture_view,
                     depth_slice: None,
@@ -410,7 +620,16 @@ impl ChartRenderer {
                 multiview_mask: None,
             });
 
-            if should_draw {
+            // 1. Draw Grid Lines
+            if grid_vertex_count > 0 {
+                rpass.set_pipeline(&self.grid_pipeline);
+                rpass.set_bind_group(0, &self.grid_bind_group, &[]);
+                rpass.set_vertex_buffer(0, self.grid_vertex_buffer.slice(..));
+                rpass.draw(0..grid_vertex_count as u32, 0..1);
+            }
+
+            // 2. Draw Candles
+            if should_draw_candles {
                 rpass.set_pipeline(&self.pipeline);
                 rpass.set_bind_group(0, &self.uniform_bind_group, &[]);
                 rpass.set_vertex_buffer(0, self.unit_buffer.slice(..));
