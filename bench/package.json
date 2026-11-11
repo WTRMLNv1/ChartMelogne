@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "bench:cli": "node --experimental-strip-types src/cli-bench.ts",
+    "bench:compare": "node compare.js",
     "dump:fixtures": "node --experimental-strip-types src/dump-golden-fixtures.ts",
     "dump:png": "node src/dump-golden-png.js"
   },

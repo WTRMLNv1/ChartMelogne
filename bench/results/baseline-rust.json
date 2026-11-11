@@ -1,0 +1,101 @@
+{
+  "dataset": {
+    "barCount": 450000
+  },
+  "gateVerification": {
+    "appendTarget1ms": "PASSED",
+    "liveTickTarget4ms": "PASSED",
+    "memoryTarget60mb": "PASSED",
+    "panVsyncTarget16ms": "PASSED",
+    "setDataTarget150ms": "PASSED",
+    "zoomVsyncTarget16ms": "PASSED"
+  },
+  "hardware": {
+    "adapterBackend": "Vulkan",
+    "adapterDeviceType": "IntegratedGpu",
+    "adapterName": "Intel(R) Iris(R) Xe Graphics",
+    "arch": "x86_64",
+    "platform": "windows"
+  },
+  "metrics": {
+    "appendHistogram": {
+      "avg_ms": 0.47,
+      "count": 200,
+      "max_ms": 11.502,
+      "p50_ms": 0.361,
+      "p95_ms": 0.65,
+      "p99_ms": 1.281
+    },
+    "appendWithFinishMs": 0.65,
+    "liveTickHistogram": {
+      "avg_ms": 0.413,
+      "count": 500,
+      "max_ms": 1.734,
+      "p50_ms": 0.341,
+      "p95_ms": 0.736,
+      "p99_ms": 0.863
+    },
+    "liveTickToPaintedWithFinishMs": 0.736,
+    "memoryAt450k": {
+      "cpuPackedBufferMb": 0.0,
+      "gpuVboMb": 8.0,
+      "processWorkingSetMb": 269.56,
+      "storeColumnsMb": 12.49,
+      "totalMemoryMb": 20.49
+    },
+    "setDataCpuPackingMs": 18.46,
+    "setDataToFirstPaintWithFinishMs": 26.72,
+    "syntheticGenMs": 28.58
+  },
+  "scenarios": {
+    "append_bar_1hz": {
+      "avg_ms": 1.06,
+      "dropped_frames": 0,
+      "duration_ms": 10012.45,
+      "fps": 58.1,
+      "max_ms": 16.45,
+      "p50_ms": 1.02,
+      "p95_ms": 1.16,
+      "p99_ms": 1.37,
+      "scenario_name": "append_bar_1hz",
+      "total_frames": 582
+    },
+    "continuous_pan": {
+      "avg_ms": 0.91,
+      "dropped_frames": 0,
+      "duration_ms": 10005.23,
+      "fps": 58.1,
+      "max_ms": 2.94,
+      "p50_ms": 0.92,
+      "p95_ms": 1.13,
+      "p99_ms": 1.31,
+      "scenario_name": "continuous_pan",
+      "total_frames": 581
+    },
+    "live_tick_100hz": {
+      "avg_ms": 1.07,
+      "dropped_frames": 0,
+      "duration_ms": 10008.11,
+      "fps": 58.1,
+      "max_ms": 5.95,
+      "p50_ms": 1.06,
+      "p95_ms": 1.2,
+      "p99_ms": 1.28,
+      "scenario_name": "live_tick_100hz",
+      "total_frames": 581
+    },
+    "zoom_sweep": {
+      "avg_ms": 1.06,
+      "dropped_frames": 0,
+      "duration_ms": 10011.95,
+      "fps": 58.0,
+      "max_ms": 4.34,
+      "p50_ms": 1.05,
+      "p95_ms": 1.17,
+      "p99_ms": 1.49,
+      "scenario_name": "zoom_sweep",
+      "total_frames": 581
+    }
+  },
+  "timestamp": "2026-11-11T02:56:05Z"
+}

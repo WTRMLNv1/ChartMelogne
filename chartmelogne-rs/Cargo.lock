@@ -123,6 +123,11 @@ name = "chartmelogne-bench"
 version = "0.1.0"
 dependencies = [
  "chartmelogne-core",
+ "chartmelogne-render",
+ "pollster",
+ "serde",
+ "serde_json",
+ "wgpu",
 ]
 
 [[package]]
