@@ -18,7 +18,7 @@ struct VertexOutput {
 fn vs_grid(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     let clip_x = (in.position.x / u.viewport_px.x) * 2.0 - 1.0;
-    let clip_y = (in.position.y / u.viewport_px.y) * 2.0 - 1.0;
+    let clip_y = 1.0 - (in.position.y / u.viewport_px.y) * 2.0;
     out.position = vec4<f32>(clip_x, clip_y, 0.0, 1.0);
     out.color = u.color;
     return out;
