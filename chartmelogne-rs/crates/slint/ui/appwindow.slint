@@ -51,6 +51,7 @@ export component AppWindow inherits Window {
     callback pointer_moved(length, length);
     callback pointer_left();
     callback drag_started(length, length);
+    callback drag_ended();
     callback dragged(length, length);
     callback scrolled(length, length); // delta_y, cursor_x
 
@@ -108,32 +109,38 @@ export component AppWindow inherits Window {
             if root.hud_active : HorizontalLayout {
                 x: 12px;
                 y: 10px;
-                spacing: 8px;
+                spacing: 12px;
+                alignment: start;
 
                 HorizontalLayout {
-                    spacing: 3px;
+                    spacing: 4px;
+                    alignment: start;
                     Text { text: "O"; color: #787b86; font-size: 11px; }
-                    Text { text: root.hud_open; color: root.hud_ohlc_color; font-size: 11px; font-weight: 500; }
+                    Text { text: root.hud_open; color: root.hud_ohlc_color; font-size: 11px; font-weight: 600; }
                 }
                 HorizontalLayout {
-                    spacing: 3px;
+                    spacing: 4px;
+                    alignment: start;
                     Text { text: "H"; color: #787b86; font-size: 11px; }
-                    Text { text: root.hud_high; color: root.hud_ohlc_color; font-size: 11px; font-weight: 500; }
+                    Text { text: root.hud_high; color: root.hud_ohlc_color; font-size: 11px; font-weight: 600; }
                 }
                 HorizontalLayout {
-                    spacing: 3px;
+                    spacing: 4px;
+                    alignment: start;
                     Text { text: "L"; color: #787b86; font-size: 11px; }
-                    Text { text: root.hud_low; color: root.hud_ohlc_color; font-size: 11px; font-weight: 500; }
+                    Text { text: root.hud_low; color: root.hud_ohlc_color; font-size: 11px; font-weight: 600; }
                 }
                 HorizontalLayout {
-                    spacing: 3px;
+                    spacing: 4px;
+                    alignment: start;
                     Text { text: "C"; color: #787b86; font-size: 11px; }
-                    Text { text: root.hud_close; color: root.hud_ohlc_color; font-size: 11px; font-weight: 500; }
+                    Text { text: root.hud_close; color: root.hud_ohlc_color; font-size: 11px; font-weight: 600; }
                 }
                 HorizontalLayout {
-                    spacing: 3px;
+                    spacing: 4px;
+                    alignment: start;
                     Text { text: "Vol"; color: #787b86; font-size: 11px; }
-                    Text { text: root.hud_volume; color: #787b86; font-size: 11px; font-weight: 500; }
+                    Text { text: root.hud_volume; color: #787b86; font-size: 11px; font-weight: 600; }
                 }
             }
 
@@ -141,12 +148,11 @@ export component AppWindow inherits Window {
             TouchArea {
                 width: 100%;
                 height: 100%;
+                mouse-cursor: crosshair;
 
                 moved => {
                     if (self.pressed) {
                         root.dragged(self.mouse-x, self.mouse-y);
-                    } else {
-                        root.pointer_moved(self.mouse-x, self.mouse-y);
                     }
                 }
 
@@ -154,7 +160,14 @@ export component AppWindow inherits Window {
                     if (event.kind == PointerEventKind.down) {
                         root.drag_started(self.mouse-x, self.mouse-y);
                     } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                        root.drag_ended();
                         root.pointer_moved(self.mouse-x, self.mouse-y);
+                    } else if (event.kind == PointerEventKind.move) {
+                        if (self.pressed) {
+                            root.dragged(self.mouse-x, self.mouse-y);
+                        } else {
+                            root.pointer_moved(self.mouse-x, self.mouse-y);
+                        }
                     }
                 }
 
@@ -162,9 +175,6 @@ export component AppWindow inherits Window {
                     root.scrolled(event.delta-y, self.mouse-x);
                     EventResult.accept
                 }
-
-                // If pointer leaves TouchArea
-                // Slint doesn't have an explicit pointer-leave event, but pointer_left can be triggered on edge or cancel
             }
         }
 

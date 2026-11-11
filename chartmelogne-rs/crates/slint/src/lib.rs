@@ -112,10 +112,19 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
 
                 if let Some(ui) = ui_handle.upgrade() {
                     let dpr = ui.window().scale_factor();
-                    st.viewport.pan_by_pixels(-(dx as f64) * (dpr as f64));
+                    st.viewport.pan_by_pixels((dx as f64) * (dpr as f64));
                     ui.window().request_redraw();
                 }
             }
+        });
+    }
+
+    // Drag Ended
+    {
+        let st_rc = Rc::clone(&state);
+        ui.on_drag_ended(move || {
+            let mut st = st_rc.borrow_mut();
+            st.is_dragging = false;
         });
     }
 
@@ -128,7 +137,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
             if let Some(ui) = ui_handle.upgrade() {
                 let dpr = ui.window().scale_factor();
                 let clamped_delta = (delta_y as f64).clamp(-100.0, 100.0);
-                let zoom_factor = (clamped_delta * 0.0018).exp();
+                let zoom_factor = (-clamped_delta * 0.0018).exp();
                 let cursor_px = (cursor_x as f64) * (dpr as f64);
                 st.viewport.zoom_at(cursor_px, zoom_factor);
                 ui.window().request_redraw();
