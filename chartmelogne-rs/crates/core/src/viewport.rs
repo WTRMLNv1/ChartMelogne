@@ -119,6 +119,14 @@ impl Viewport {
         self.clamp();
     }
 
+    pub fn pan_y_by_pixels(&mut self, delta_screen_py: f64) {
+        let delta_price = delta_screen_py / self.y_scale();
+        self.y_min += delta_price;
+        self.y_max += delta_price;
+        self.target_y_min = self.y_min;
+        self.target_y_max = self.y_max;
+    }
+
     pub fn zoom_at(&mut self, cursor_screen_px: f64, zoom_factor: f64) {
         let anchor_bar = self.screen_px_to_bar_index(cursor_screen_px);
         let new_bars_visible = self.bars_visible * zoom_factor;
@@ -127,6 +135,19 @@ impl Viewport {
         let new_px_per_bar = self.width_px / self.bars_visible;
         self.from_index = anchor_bar - cursor_screen_px / new_px_per_bar;
         self.clamp();
+    }
+
+    pub fn zoom_y_at(&mut self, cursor_screen_py: f64, zoom_factor: f64) {
+        let bottom_py = (self.height_px - cursor_screen_py).max(0.0);
+        let anchor_price = self.y_min + bottom_py / self.y_scale();
+        let span = self.y_max - self.y_min;
+        let new_span = (span * zoom_factor).max(0.0001);
+
+        let ratio = (bottom_py / self.height_px).clamp(0.0, 1.0);
+        self.y_min = anchor_price - ratio * new_span;
+        self.y_max = anchor_price + (1.0 - ratio) * new_span;
+        self.target_y_min = self.y_min;
+        self.target_y_max = self.y_max;
     }
 
     pub fn set_visible_range(&mut self, from_index: f64, to_index: f64) {

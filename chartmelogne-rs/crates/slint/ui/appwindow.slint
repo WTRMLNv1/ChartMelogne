@@ -38,6 +38,9 @@ export component AppWindow inherits Window {
     in-out property <string> last_price_str: "";
     in-out property <color> last_price_color: #089981;
 
+    // Auto / Manual Y Mode
+    in-out property <bool> auto_y_mode: true;
+
     // Top-Left HUD (OHLCV)
     in-out property <bool> hud_active: false;
     in-out property <string> hud_open: "";
@@ -54,6 +57,8 @@ export component AppWindow inherits Window {
     callback drag_ended();
     callback dragged(length, length);
     callback scrolled(length, length); // delta_y, cursor_x
+    callback price_axis_scrolled(length, length); // delta_y, cursor_y
+    callback toggle_auto_y();
 
     // Main layout
     GridLayout {
@@ -241,6 +246,17 @@ export component AppWindow inherits Window {
                     vertical-alignment: center;
                 }
             }
+
+            // Price Axis Interaction (Scroll for Vertical Zoom)
+            TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: ns-resize;
+                scroll-event(event) => {
+                    root.price_axis_scrolled(event.delta-y, self.mouse-y);
+                    EventResult.accept
+                }
+            }
         }
 
         // BOTTOM-LEFT: Time Axis (28px high)
@@ -290,7 +306,7 @@ export component AppWindow inherits Window {
             }
         }
 
-        // BOTTOM-RIGHT: Corner Junction (65px x 28px)
+        // BOTTOM-RIGHT: "Auto" Mode Toggle Button at the bottom of the price axis
         Rectangle {
             row: 1;
             col: 1;
@@ -311,12 +327,31 @@ export component AppWindow inherits Window {
                 background: #242732;
             }
 
-            Text {
-                text: "UTC+5:30";
-                color: #787b86.with-alpha(0.6);
-                font-size: 10px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+            auto_btn := Rectangle {
+                x: 8px;
+                y: 3px;
+                width: 48px;
+                height: 22px;
+                border-radius: 4px;
+                background: root.auto_y_mode ? (auto_touch.has-hover ? #1f53db : #2962ff) : (auto_touch.has-hover ? #363a45 : #1e222d);
+                border-width: 1px;
+                border-color: root.auto_y_mode ? #2962ff : #363a45;
+
+                Text {
+                    text: "Auto";
+                    color: root.auto_y_mode ? #ffffff : #787b86;
+                    font-size: 11px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                auto_touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.toggle_auto_y();
+                    }
+                }
             }
         }
     }

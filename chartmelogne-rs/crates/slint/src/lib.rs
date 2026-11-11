@@ -7,7 +7,7 @@ use chartmelogne_core::{
     price_axis::{generate_price_ticks, PriceTickOptions},
     synthetic::{generate_synthetic_candles, SyntheticDataOptions},
     time_axis::{TimeAxis, TimeAxisOptions},
-    types::CandleData,
+    types::{CandleData, ViewportMode},
     viewport::Viewport,
 };
 use chartmelogne_render::{ChartRenderer, ViewParams};
@@ -107,12 +107,16 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
             let mut st = st_rc.borrow_mut();
             if st.is_dragging {
                 let dx = x - st.last_drag_x;
+                let dy = y - st.last_drag_y;
                 st.last_drag_x = x;
                 st.last_drag_y = y;
 
                 if let Some(ui) = ui_handle.upgrade() {
                     let dpr = ui.window().scale_factor();
                     st.viewport.pan_by_pixels((dx as f64) * (dpr as f64));
+                    if st.viewport.y_mode == ViewportMode::Manual {
+                        st.viewport.pan_y_by_pixels((dy as f64) * (dpr as f64));
+                    }
                     ui.window().request_redraw();
                 }
             }
@@ -128,7 +132,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
         });
     }
 
-    // 3. Scrolled (Zoom)
+    // 3. Scrolled (Horizontal Zoom)
     {
         let st_rc = Rc::clone(&state);
         let ui_handle = ui.as_weak();
@@ -140,6 +144,47 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                 let zoom_factor = (-clamped_delta * 0.0018).exp();
                 let cursor_px = (cursor_x as f64) * (dpr as f64);
                 st.viewport.zoom_at(cursor_px, zoom_factor);
+                ui.window().request_redraw();
+            }
+        });
+    }
+
+    // 4. Price Axis Scrolled (Vertical Zoom on Y-Axis, turns off Auto mode)
+    {
+        let st_rc = Rc::clone(&state);
+        let ui_handle = ui.as_weak();
+        ui.on_price_axis_scrolled(move |delta_y, cursor_y| {
+            let mut st = st_rc.borrow_mut();
+            if let Some(ui) = ui_handle.upgrade() {
+                let dpr = ui.window().scale_factor();
+                st.viewport.y_mode = ViewportMode::Manual;
+                ui.set_auto_y_mode(false);
+
+                let clamped_delta = (delta_y as f64).clamp(-100.0, 100.0);
+                let zoom_factor = (-clamped_delta * 0.0018).exp();
+                let cursor_py = (cursor_y as f64) * (dpr as f64);
+                st.viewport.zoom_y_at(cursor_py, zoom_factor);
+                ui.window().request_redraw();
+            }
+        });
+    }
+
+    // 5. Toggle Auto Mode Button
+    {
+        let st_rc = Rc::clone(&state);
+        let ui_handle = ui.as_weak();
+        ui.on_toggle_auto_y(move || {
+            let mut st = st_rc.borrow_mut();
+            if let Some(ui) = ui_handle.upgrade() {
+                if st.viewport.y_mode == ViewportMode::Auto {
+                    st.viewport.y_mode = ViewportMode::Manual;
+                    ui.set_auto_y_mode(false);
+                } else {
+                    st.viewport.y_mode = ViewportMode::Auto;
+                    ui.set_auto_y_mode(true);
+                    let (min_p, max_p) = st.store.get_visible_min_max(st.viewport.from_index, st.viewport.from_index + st.viewport.bars_visible);
+                    st.viewport.update_auto_y(min_p, max_p, true);
+                }
                 ui.window().request_redraw();
             }
         });
