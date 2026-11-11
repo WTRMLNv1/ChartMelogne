@@ -24,6 +24,16 @@ pub const UNIT_VERTICES: [f32; 36] = [
 
 pub const CANDLE_SHADER_SRC: &str = include_str!("candle.wgsl");
 pub const GRID_SHADER_SRC: &str = include_str!("grid.wgsl");
+pub const VOLUME_SHADER_SRC: &str = include_str!("volume.wgsl");
+
+pub const HISTOGRAM_UNIT_VERTICES: [f32; 12] = [
+    -0.5, 0.0,
+     0.5, 0.0,
+     0.5, 1.0,
+    -0.5, 0.0,
+     0.5, 1.0,
+    -0.5, 1.0,
+];
 
 /// 64-byte uniform buffer layout matching std140 / WGSL rules
 #[repr(C)]
@@ -48,6 +58,20 @@ pub struct GridUniforms {
     pub color: [f32; 4],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct VolumeUniforms {
+    pub viewport_px: [f32; 2],
+    pub px_per_bar: f32,
+    pub from_index: f32,
+    pub max_volume: f32,
+    pub height_ratio: f32,
+    pub dpr: f32,
+    pub _pad: f32,
+    pub up_color: [f32; 4],
+    pub down_color: [f32; 4],
+}
+
 /// Rendering parameters passed per frame
 #[derive(Clone, Debug)]
 pub struct ViewParams {
@@ -64,6 +88,11 @@ pub struct ViewParams {
     pub grid_color: Option<[f32; 4]>,
     pub horizontal_grid_y: Vec<f32>,
     pub vertical_grid_x: Vec<f32>,
+    pub show_volume: bool,
+    pub volume_max: f32,
+    pub volume_height_ratio: f32,
+    pub volume_up_color: [f32; 4],
+    pub volume_down_color: [f32; 4],
 }
 
 impl Default for ViewParams {
@@ -82,6 +111,11 @@ impl Default for ViewParams {
             grid_color: None,
             horizontal_grid_y: Vec::new(),
             vertical_grid_x: Vec::new(),
+            show_volume: false,
+            volume_max: 1.0,
+            volume_height_ratio: 0.20,
+            volume_up_color: [0.03, 0.65, 0.55, 0.35],
+            volume_down_color: [0.95, 0.25, 0.33, 0.35],
         }
     }
 }
@@ -105,6 +139,14 @@ pub struct ChartRenderer {
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
     instance_count: usize,
+
+    volume_pipeline: wgpu::RenderPipeline,
+    volume_unit_buffer: wgpu::Buffer,
+    volume_uniform_buffer: wgpu::Buffer,
+    volume_bind_group: wgpu::BindGroup,
+    volume_buffer: wgpu::Buffer,
+    volume_capacity: usize,
+    volume_count: usize,
 
     plot_width: u32,
     plot_height: u32,
@@ -328,7 +370,120 @@ impl ChartRenderer {
             mapped_at_creation: false,
         });
 
-        // 3. Texture setup
+        // 3. Volume pipeline
+        let volume_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Volume Shader"),
+            source: wgpu::ShaderSource::Wgsl(VOLUME_SHADER_SRC.into()),
+        });
+
+        let volume_uniform_size = std::mem::size_of::<VolumeUniforms>() as u64;
+        let volume_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Volume Uniform Buffer"),
+            size: volume_uniform_size,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let volume_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Volume Uniform BGL"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(volume_uniform_size),
+                    },
+                    count: None,
+                }],
+            });
+
+        let volume_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Volume Uniform BG"),
+            layout: &volume_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: volume_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        let volume_unit_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Volume Unit Vertex Buffer"),
+            contents: bytemuck::cast_slice(&HISTOGRAM_UNIT_VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let volume_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Volume Instance Buffer"),
+            size: (initial_capacity * 8) as u64,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let volume_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Volume Pipeline Layout"),
+                bind_group_layouts: &[Some(&volume_bind_group_layout)],
+                immediate_size: 0,
+            });
+
+        let volume_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Volume Render Pipeline"),
+            layout: Some(&volume_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &volume_shader,
+                entry_point: Some("vs_volume"),
+                compilation_options: Default::default(),
+                buffers: &[
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: 8,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 0,
+                            shader_location: 0,
+                        }],
+                    }),
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: 8,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &[wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 0,
+                            shader_location: 1,
+                        }],
+                    }),
+                ],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &volume_shader,
+                entry_point: Some("fs_volume"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // 4. Texture setup
         let plot_width = 1;
         let plot_height = 1;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -365,6 +520,13 @@ impl ChartRenderer {
             instance_buffer,
             instance_capacity: initial_capacity,
             instance_count: 0,
+            volume_pipeline,
+            volume_unit_buffer,
+            volume_uniform_buffer,
+            volume_bind_group,
+            volume_buffer,
+            volume_capacity: initial_capacity,
+            volume_count: 0,
             plot_width,
             plot_height,
             texture,
@@ -484,6 +646,84 @@ impl ChartRenderer {
         }
     }
 
+    /// Upload volume buffer: `volume_data` has 2 floats per bar [volume, is_up (1.0 or 0.0)]
+    pub fn upload_volume(&mut self, volume_data: &[f32], count: usize) {
+        if count > self.volume_capacity {
+            let mut new_cap = self.volume_capacity.max(1024);
+            while new_cap < count {
+                new_cap *= 2;
+            }
+            self.volume_capacity = new_cap;
+            self.volume_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Volume Instance Buffer"),
+                size: (new_cap * 8) as u64,
+                usage: wgpu::BufferUsages::VERTEX
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+        }
+
+        if count > 0 && volume_data.len() >= count * 2 {
+            let slice = &volume_data[..count * 2];
+            self.queue
+                .write_buffer(&self.volume_buffer, 0, bytemuck::cast_slice(slice));
+        }
+        self.volume_count = count;
+    }
+
+    /// Append a volume bar at `index` ([volume, is_up]).
+    pub fn append_volume(&mut self, bar: &[f32; 2], index: usize) {
+        if index >= self.volume_capacity {
+            let mut new_cap = self.volume_capacity.max(1024);
+            while new_cap <= index {
+                new_cap *= 2;
+            }
+            let new_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Volume Instance Buffer (Expanded)"),
+                size: (new_cap * 8) as u64,
+                usage: wgpu::BufferUsages::VERTEX
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+
+            if self.volume_count > 0 {
+                let copy_bytes = (self.volume_count * 8) as u64;
+                let mut encoder = self
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("Volume Buffer Expansion Copy"),
+                    });
+                encoder.copy_buffer_to_buffer(&self.volume_buffer, 0, &new_buffer, 0, copy_bytes);
+                self.queue.submit(Some(encoder.finish()));
+            }
+
+            self.volume_buffer = new_buffer;
+            self.volume_capacity = new_cap;
+        }
+
+        let offset = (index * 8) as u64;
+        self.queue
+            .write_buffer(&self.volume_buffer, offset, bytemuck::cast_slice(bar));
+
+        if index + 1 > self.volume_count {
+            self.volume_count = index + 1;
+        }
+    }
+
+    /// Update the volume bar at `index` in-place.
+    pub fn update_last_volume(&mut self, bar: &[f32; 2], index: usize) {
+        if index < self.volume_capacity {
+            let offset = (index * 8) as u64;
+            self.queue
+                .write_buffer(&self.volume_buffer, offset, bytemuck::cast_slice(bar));
+            if index + 1 > self.volume_count {
+                self.volume_count = index + 1;
+            }
+        }
+    }
+
     /// Render grid and candles into the target texture.
     pub fn render(&mut self, encoder: &mut wgpu::CommandEncoder, view: &ViewParams) {
         if self.plot_width == 0 || self.plot_height == 0 {
@@ -575,6 +815,27 @@ impl ChartRenderer {
 
         let should_draw_candles = view.count > 0 && first <= last && (first as usize) < view.count;
 
+        let should_draw_volume = view.show_volume
+            && self.volume_count > 0
+            && first <= last
+            && (first as usize) < self.volume_count;
+
+        if should_draw_volume {
+            let vol_uniforms = VolumeUniforms {
+                viewport_px: [self.plot_width as f32, self.plot_height as f32],
+                px_per_bar: view.px_per_bar,
+                from_index: view.from_index,
+                max_volume: view.volume_max.max(1.0),
+                height_ratio: view.volume_height_ratio.clamp(0.01, 1.0),
+                dpr: view.dpr,
+                _pad: 0.0,
+                up_color: view.volume_up_color,
+                down_color: view.volume_down_color,
+            };
+            self.queue
+                .write_buffer(&self.volume_uniform_buffer, 0, bytemuck::bytes_of(&vol_uniforms));
+        }
+
         if should_draw_candles {
             let y_span = view.y_max - view.y_min;
             let y_scale = if y_span > 0.0 {
@@ -628,7 +889,16 @@ impl ChartRenderer {
                 rpass.draw(0..grid_vertex_count as u32, 0..1);
             }
 
-            // 2. Draw Candles
+            // 2. Draw Volume Histogram
+            if should_draw_volume {
+                rpass.set_pipeline(&self.volume_pipeline);
+                rpass.set_bind_group(0, &self.volume_bind_group, &[]);
+                rpass.set_vertex_buffer(0, self.volume_unit_buffer.slice(..));
+                rpass.set_vertex_buffer(1, self.volume_buffer.slice(..));
+                rpass.draw(0..6, first..(last + 1));
+            }
+
+            // 3. Draw Candles
             if should_draw_candles {
                 rpass.set_pipeline(&self.pipeline);
                 rpass.set_bind_group(0, &self.uniform_bind_group, &[]);

@@ -84,6 +84,10 @@ pub struct CandleStore {
     /// Format per candle: [open - base, high - base, low - base, close - base]
     pub ohlc: Vec<f32>,
 
+    /// Interleaved f32 buffer for volume histogram (8 bytes per bar)
+    /// Format per bar: [volume as f32, is_up (1.0 or 0.0)]
+    pub volume_instances: Vec<f32>,
+
     pub scratch_instance: [f32; 4],
 }
 
@@ -112,6 +116,7 @@ impl CandleStore {
             volume: vec![0u32; cap],
             flags: vec![0u8; cap],
             ohlc: vec![0.0f32; cap * 4],
+            volume_instances: vec![0.0f32; cap * 2],
 
             scratch_instance: [0.0; 4],
         }
@@ -231,12 +236,19 @@ impl CandleStore {
         self.base_price = base;
 
         let mut off = 0;
+        let mut v_off = 0;
         for i in 0..n {
-            self.ohlc[off] = (data.open[i] - base) as f32;
+            let o = data.open[i];
+            let c = data.close[i];
+            self.ohlc[off] = (o - base) as f32;
             self.ohlc[off + 1] = (data.high[i] - base) as f32;
             self.ohlc[off + 2] = (data.low[i] - base) as f32;
-            self.ohlc[off + 3] = (data.close[i] - base) as f32;
+            self.ohlc[off + 3] = (c - base) as f32;
             off += 4;
+
+            self.volume_instances[v_off] = data.volume[i] as f32;
+            self.volume_instances[v_off + 1] = if c >= o { 1.0 } else { 0.0 };
+            v_off += 2;
         }
 
         // Build day_starts
@@ -339,6 +351,10 @@ impl CandleStore {
         self.ohlc[off + 2] = rel_l;
         self.ohlc[off + 3] = rel_c;
 
+        let v_off = idx * 2;
+        self.volume_instances[v_off] = bar.volume as f32;
+        self.volume_instances[v_off + 1] = if bar.close >= bar.open { 1.0 } else { 0.0 };
+
         self.scratch_instance[0] = rel_o;
         self.scratch_instance[1] = rel_h;
         self.scratch_instance[2] = rel_l;
@@ -404,6 +420,10 @@ impl CandleStore {
         self.ohlc[off + 1] = rel_h;
         self.ohlc[off + 2] = rel_l;
         self.ohlc[off + 3] = rel_c;
+
+        let v_off = idx * 2;
+        self.volume_instances[v_off] = bar.volume as f32;
+        self.volume_instances[v_off + 1] = if bar.close >= bar.open { 1.0 } else { 0.0 };
 
         self.scratch_instance[0] = rel_o;
         self.scratch_instance[1] = rel_h;
@@ -537,12 +557,40 @@ impl CandleStore {
         bytemuck::cast_slice(&self.ohlc[..self.count * 4])
     }
 
+    /// Direct byte slice of active packed volume instances [volume as f32, is_up as f32]
+    pub fn volume_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.volume_instances[..self.count * 2])
+    }
+
+    /// Maximum volume in the visible index range
+    pub fn get_visible_max_volume(&self, from_index: f64, to_index: f64) -> u32 {
+        if self.count == 0 {
+            return 1;
+        }
+        let start = 0.max(from_index.floor() as usize);
+        let end = self.count.min(to_index.ceil() as usize);
+
+        if start >= end {
+            let idx = start.clamp(0, self.count - 1);
+            return self.volume[idx].max(1);
+        }
+
+        let mut max_vol = 1u32;
+        for i in start..end {
+            if self.volume[i] > max_vol {
+                max_vol = self.volume[i];
+            }
+        }
+        max_vol
+    }
+
     fn reallocate(&mut self, new_cap: usize) {
         self.capacity = new_cap;
         self.time.resize(new_cap, 0.0);
         self.volume.resize(new_cap, 0);
         self.flags.resize(new_cap, 0);
         self.ohlc.resize(new_cap * 4, 0.0);
+        self.volume_instances.resize(new_cap * 2, 0.0);
 
         let block_cap = 16.max((new_cap + 255) / 256);
         if self.block_min.len() < block_cap {

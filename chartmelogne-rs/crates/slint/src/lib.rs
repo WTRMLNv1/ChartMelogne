@@ -237,6 +237,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                     let mut renderer = ChartRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
                     let st = st_rc.borrow();
                     renderer.upload_all(&st.store.ohlc, st.store.count());
+                    renderer.upload_volume(&st.store.volume_instances, st.store.count());
                     let mut r_slot = r_rc.borrow_mut();
                     *r_slot = Some(renderer);
                 }
@@ -387,6 +388,8 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                             }
                         }
 
+                        let max_vol = store.get_visible_max_volume(from_index, from_index + bars_visible) as f32;
+
                         let view_params = ViewParams {
                             from_index: from_index as f32,
                             px_per_bar: px_per_bar as f32,
@@ -406,6 +409,11 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                             grid_color: Some([0.1412, 0.1529, 0.1961, 1.0]), // #242732
                             horizontal_grid_y: grid_y,
                             vertical_grid_x: grid_x,
+                            show_volume: true,
+                            volume_max: max_vol,
+                            volume_height_ratio: 0.20,
+                            volume_up_color: [0.03, 0.65, 0.55, 0.35],
+                            volume_down_color: [0.95, 0.25, 0.33, 0.35],
                         };
 
                         (view_params, (phys_w, phys_h))
