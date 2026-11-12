@@ -122,6 +122,9 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
             st.is_dragging = true;
             st.last_drag_x = x;
             st.last_drag_y = y;
+            st.crosshair_active = true;
+            st.crosshair_screen_x = x;
+            st.crosshair_screen_y = y;
         });
     }
 
@@ -136,6 +139,9 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                 let dy = y - st.last_drag_y;
                 st.last_drag_x = x;
                 st.last_drag_y = y;
+                st.crosshair_active = true;
+                st.crosshair_screen_x = x;
+                st.crosshair_screen_y = y;
 
                 if let Some(ui) = ui_handle.upgrade() {
                     let dpr = ui.window().scale_factor();
