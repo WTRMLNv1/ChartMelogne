@@ -54,13 +54,62 @@ pub struct Theme {
     pub font_size: f32,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum ChartType {
+    #[default]
+    Candlestick,
+}
+
+impl std::str::FromStr for ChartType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "candlestick" | "candlesticks" | "candle" | "candles" => Ok(ChartType::Candlestick),
+            other => Err(format!(
+                "Unknown chart type '{other}'. Only 'candlestick' is currently supported."
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for ChartType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChartType::Candlestick => write!(f, "candlestick"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChartOptions {
     pub theme: Option<Theme>,
     pub utc_offset_minutes: Option<i32>,
     pub price_decimals: Option<usize>,
     pub dpr: Option<f64>,
+    pub allow_zoom: Option<bool>,
+    pub show_axes: Option<bool>,
+    pub chart_type: Option<ChartType>,
+    pub show_volume: Option<bool>,
+    pub show_indicators: Option<bool>,
+}
+
+impl Default for ChartOptions {
+    fn default() -> Self {
+        Self {
+            theme: None,
+            utc_offset_minutes: None,
+            price_decimals: None,
+            dpr: None,
+            allow_zoom: Some(true),
+            show_axes: Some(true),
+            chart_type: Some(ChartType::Candlestick),
+            show_volume: Some(true),
+            show_indicators: Some(false),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

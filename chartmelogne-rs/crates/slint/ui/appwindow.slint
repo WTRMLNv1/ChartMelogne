@@ -50,6 +50,13 @@ export component AppWindow inherits Window {
     in-out property <string> hud_volume: "";
     in-out property <color> hud_ohlc_color: #089981;
 
+    // Chart Flags & Options
+    in-out property <bool> allow_zoom: true;
+    in-out property <bool> show_axes: true;
+    in-out property <string> chart_type: "candlestick";
+    in-out property <bool> show_volume: true;
+    in-out property <bool> show_indicators: false;
+
     // Callbacks to Rust
     callback pointer_moved(length, length);
     callback pointer_left();
@@ -141,11 +148,17 @@ export component AppWindow inherits Window {
                     Text { text: "C"; color: #787b86; font-size: 11px; }
                     Text { text: root.hud_close; color: root.hud_ohlc_color; font-size: 11px; font-weight: 600; }
                 }
-                HorizontalLayout {
+                if root.show_volume : HorizontalLayout {
                     spacing: 4px;
                     alignment: start;
                     Text { text: "Vol"; color: #787b86; font-size: 11px; }
                     Text { text: root.hud_volume; color: #787b86; font-size: 11px; font-weight: 600; }
+                }
+                if root.show_indicators : HorizontalLayout {
+                    spacing: 4px;
+                    alignment: start;
+                    Text { text: "Ind"; color: #2962ff; font-size: 11px; font-weight: 600; }
+                    Text { text: "None"; color: #787b86; font-size: 11px; }
                 }
             }
 
@@ -177,7 +190,9 @@ export component AppWindow inherits Window {
                 }
 
                 scroll-event(event) => {
-                    root.scrolled(event.delta-y, self.mouse-x);
+                    if (root.allow_zoom) {
+                        root.scrolled(event.delta-y, self.mouse-x);
+                    }
                     EventResult.accept
                 }
             }
@@ -187,9 +202,10 @@ export component AppWindow inherits Window {
         price_gutter := Rectangle {
             row: 0;
             col: 1;
-            width: 65px;
+            width: root.show_axes ? 65px : 0px;
             background: #131722;
             clip: true;
+            visible: root.show_axes;
 
             // Border left separator
             Rectangle {
@@ -253,7 +269,9 @@ export component AppWindow inherits Window {
                 height: 100%;
                 mouse-cursor: ns-resize;
                 scroll-event(event) => {
-                    root.price_axis_scrolled(event.delta-y, self.mouse-y);
+                    if (root.allow_zoom) {
+                        root.price_axis_scrolled(event.delta-y, self.mouse-y);
+                    }
                     EventResult.accept
                 }
             }
@@ -263,9 +281,10 @@ export component AppWindow inherits Window {
         time_gutter := Rectangle {
             row: 1;
             col: 0;
-            height: 28px;
+            height: root.show_axes ? 28px : 0px;
             background: #131722;
             clip: true;
+            visible: root.show_axes;
 
             // Border top separator
             Rectangle {
@@ -310,7 +329,10 @@ export component AppWindow inherits Window {
         Rectangle {
             row: 1;
             col: 1;
+            width: root.show_axes ? 65px : 0px;
+            height: root.show_axes ? 28px : 0px;
             background: #131722;
+            visible: root.show_axes;
 
             Rectangle {
                 x: 0px;

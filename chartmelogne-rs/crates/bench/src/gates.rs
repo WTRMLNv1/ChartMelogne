@@ -88,6 +88,7 @@ pub fn run_gates(device: &wgpu::Device, queue: &wgpu::Queue) -> GateResults {
         grid_color: None,
         horizontal_grid_y: Vec::new(),
         vertical_grid_x: Vec::new(),
+        ..Default::default()
     };
 
     // Full setData to First Paint: upload + render + GPU wait

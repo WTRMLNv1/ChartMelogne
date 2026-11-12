@@ -7,7 +7,7 @@ use chartmelogne_core::{
     price_axis::{generate_price_ticks, PriceTickOptions},
     synthetic::{generate_synthetic_candles, SyntheticDataOptions},
     time_axis::{TimeAxis, TimeAxisOptions},
-    types::{CandleData, ViewportMode},
+    types::{CandleData, ChartType, ViewportMode},
     viewport::Viewport,
 };
 use chartmelogne_render::{ChartRenderer, ViewParams};
@@ -19,6 +19,11 @@ slint::include_modules!();
 pub struct ChartAppConfig {
     pub candle_data: CandleData,
     pub utc_offset_minutes: i32,
+    pub allow_zoom: bool,
+    pub show_axes: bool,
+    pub chart_type: ChartType,
+    pub show_volume: bool,
+    pub show_indicators: bool,
 }
 
 impl Default for ChartAppConfig {
@@ -33,6 +38,11 @@ impl Default for ChartAppConfig {
         Self {
             candle_data,
             utc_offset_minutes: 330,
+            allow_zoom: true,
+            show_axes: true,
+            chart_type: ChartType::Candlestick,
+            show_volume: true,
+            show_indicators: false,
         }
     }
 }
@@ -47,10 +57,21 @@ struct ChartAppState {
     crosshair_active: bool,
     crosshair_screen_x: f32,
     crosshair_screen_y: f32,
+    allow_zoom: bool,
+    show_axes: bool,
+    chart_type: ChartType,
+    show_volume: bool,
+    show_indicators: bool,
 }
 
 pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
+
+    ui.set_allow_zoom(config.allow_zoom);
+    ui.set_show_axes(config.show_axes);
+    ui.set_chart_type(config.chart_type.to_string().into());
+    ui.set_show_volume(config.show_volume);
+    ui.set_show_indicators(config.show_indicators);
 
     let count = config.candle_data.time.len();
     let mut store = CandleStore::new(count, config.utc_offset_minutes);
@@ -82,6 +103,11 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
         crosshair_active: false,
         crosshair_screen_x: 0.0,
         crosshair_screen_y: 0.0,
+        allow_zoom: config.allow_zoom,
+        show_axes: config.show_axes,
+        chart_type: config.chart_type,
+        show_volume: config.show_volume,
+        show_indicators: config.show_indicators,
     }));
 
     let renderer_slot: Rc<RefCell<Option<ChartRenderer>>> = Rc::new(RefCell::new(None));
@@ -138,6 +164,9 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
         let ui_handle = ui.as_weak();
         ui.on_scrolled(move |delta_y, cursor_x| {
             let mut st = st_rc.borrow_mut();
+            if !st.allow_zoom {
+                return;
+            }
             if let Some(ui) = ui_handle.upgrade() {
                 let dpr = ui.window().scale_factor();
                 let clamped_delta = (delta_y as f64).clamp(-100.0, 100.0);
@@ -155,6 +184,9 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
         let ui_handle = ui.as_weak();
         ui.on_price_axis_scrolled(move |delta_y, cursor_y| {
             let mut st = st_rc.borrow_mut();
+            if !st.allow_zoom {
+                return;
+            }
             if let Some(ui) = ui_handle.upgrade() {
                 let dpr = ui.window().scale_factor();
                 st.viewport.y_mode = ViewportMode::Manual;
@@ -260,6 +292,11 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                             crosshair_active,
                             crosshair_screen_x,
                             crosshair_screen_y,
+                            allow_zoom,
+                            show_axes,
+                            chart_type,
+                            show_volume,
+                            show_indicators,
                             ..
                         } = *st;
 
@@ -276,52 +313,59 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                         let from_index = viewport.from_index;
                         let bars_visible = viewport.bars_visible;
 
-                        // 1. Generate Price Ticks
-                        let price_ticks = generate_price_ticks(y_min, y_max, phys_h as f64, &PriceTickOptions::default());
-                        let mut ui_price_ticks = Vec::with_capacity(price_ticks.len());
-                        let mut grid_y = Vec::with_capacity(price_ticks.len());
+                        // 1 & 2. Generate Ticks and Grid (if show_axes)
+                        let mut ui_price_ticks = Vec::new();
+                        let mut grid_y = Vec::new();
+                        let mut ui_time_ticks = Vec::new();
+                        let mut grid_x = Vec::new();
 
-                        for tick in &price_ticks {
-                            let y_phys = (phys_h as f64) - (tick.price - y_min) * y_scale;
-                            if y_phys >= 0.0 && y_phys <= (phys_h as f64) {
-                                grid_y.push(y_phys as f32);
-                                let y_logical = (y_phys / (dpr as f64)) as f32;
-                                ui_price_ticks.push(PriceTickUi {
-                                    y_px: y_logical,
-                                    label: tick.label.clone().into(),
-                                });
+                        if show_axes {
+                            let price_ticks = generate_price_ticks(y_min, y_max, phys_h as f64, &PriceTickOptions::default());
+                            ui_price_ticks.reserve(price_ticks.len());
+                            grid_y.reserve(price_ticks.len());
+
+                            for tick in &price_ticks {
+                                let y_phys = (phys_h as f64) - (tick.price - y_min) * y_scale;
+                                if y_phys >= 0.0 && y_phys <= (phys_h as f64) {
+                                    grid_y.push(y_phys as f32);
+                                    let y_logical = (y_phys / (dpr as f64)) as f32;
+                                    ui_price_ticks.push(PriceTickUi {
+                                        y_px: y_logical,
+                                        label: tick.label.clone().into(),
+                                    });
+                                }
+                            }
+
+                            let time_ticks = time_axis.generate_ticks(
+                                &store.time,
+                                store.count(),
+                                from_index,
+                                bars_visible,
+                                phys_w as f64,
+                                Some(&store.day_starts),
+                                Some(store.day_count),
+                            );
+                            ui_time_ticks.reserve(time_ticks.len());
+                            grid_x.reserve(time_ticks.len());
+
+                            for tick in time_ticks {
+                                let x_phys = (tick.bar_index as f64 + 0.5 - from_index) * px_per_bar;
+                                if x_phys >= 0.0 && x_phys <= (phys_w as f64) {
+                                    grid_x.push(x_phys as f32);
+                                    let x_logical = (x_phys / (dpr as f64)) as f32;
+                                    ui_time_ticks.push(TimeTickUi {
+                                        x_px: x_logical,
+                                        label: tick.label.clone().into(),
+                                    });
+                                }
                             }
                         }
+
                         ui.set_price_ticks(ModelRc::new(VecModel::from(ui_price_ticks)));
-
-                        // 2. Generate Time Ticks
-                        let time_ticks = time_axis.generate_ticks(
-                            &store.time,
-                            store.count(),
-                            from_index,
-                            bars_visible,
-                            phys_w as f64,
-                            Some(&store.day_starts),
-                            Some(store.day_count),
-                        );
-                        let mut ui_time_ticks = Vec::with_capacity(time_ticks.len());
-                        let mut grid_x = Vec::with_capacity(time_ticks.len());
-
-                        for tick in time_ticks {
-                            let x_phys = (tick.bar_index as f64 + 0.5 - from_index) * px_per_bar;
-                            if x_phys >= 0.0 && x_phys <= (phys_w as f64) {
-                                grid_x.push(x_phys as f32);
-                                let x_logical = (x_phys / (dpr as f64)) as f32;
-                                ui_time_ticks.push(TimeTickUi {
-                                    x_px: x_logical,
-                                    label: tick.label.clone().into(),
-                                });
-                            }
-                        }
                         ui.set_time_ticks(ModelRc::new(VecModel::from(ui_time_ticks)));
 
                         // 3. Last Price line and badge
-                        if store.count() > 0 {
+                        if show_axes && store.count() > 0 {
                             let last_idx = store.count() - 1;
                             let last_close = store.get_close(last_idx);
                             let last_open = store.get_open(last_idx);
@@ -338,6 +382,8 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                             } else {
                                 slint::Color::from_argb_u8(255, 242, 54, 69) // #f23645
                             });
+                        } else {
+                            ui.set_last_price_visible(false);
                         }
 
                         // 4. Crosshair and HUD
@@ -409,11 +455,15 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                             grid_color: Some([0.1412, 0.1529, 0.1961, 1.0]), // #242732
                             horizontal_grid_y: grid_y,
                             vertical_grid_x: grid_x,
-                            show_volume: true,
+                            show_volume,
                             volume_max: max_vol,
                             volume_height_ratio: 0.20,
                             volume_up_color: [0.03, 0.65, 0.55, 0.35],
                             volume_down_color: [0.95, 0.25, 0.33, 0.35],
+                            allow_zoom,
+                            show_axes,
+                            chart_type,
+                            show_indicators,
                         };
 
                         (view_params, (phys_w, phys_h))

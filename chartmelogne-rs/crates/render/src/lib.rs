@@ -93,6 +93,10 @@ pub struct ViewParams {
     pub volume_height_ratio: f32,
     pub volume_up_color: [f32; 4],
     pub volume_down_color: [f32; 4],
+    pub allow_zoom: bool,
+    pub show_axes: bool,
+    pub chart_type: chartmelogne_core::types::ChartType,
+    pub show_indicators: bool,
 }
 
 impl Default for ViewParams {
@@ -111,11 +115,15 @@ impl Default for ViewParams {
             grid_color: None,
             horizontal_grid_y: Vec::new(),
             vertical_grid_x: Vec::new(),
-            show_volume: false,
+            show_volume: true,
             volume_max: 1.0,
             volume_height_ratio: 0.20,
             volume_up_color: [0.03, 0.65, 0.55, 0.35],
             volume_down_color: [0.95, 0.25, 0.33, 0.35],
+            allow_zoom: true,
+            show_axes: true,
+            chart_type: chartmelogne_core::types::ChartType::Candlestick,
+            show_indicators: false,
         }
     }
 }
@@ -813,7 +821,10 @@ impl ChartRenderer {
             .min(view.count as isize - 1)
             .max(0) as u32;
 
-        let should_draw_candles = view.count > 0 && first <= last && (first as usize) < view.count;
+        let should_draw_candles = view.chart_type == chartmelogne_core::types::ChartType::Candlestick
+            && view.count > 0
+            && first <= last
+            && (first as usize) < view.count;
 
         let should_draw_volume = view.show_volume
             && self.volume_count > 0
@@ -882,7 +893,7 @@ impl ChartRenderer {
             });
 
             // 1. Draw Grid Lines
-            if grid_vertex_count > 0 {
+            if grid_vertex_count > 0 && view.show_axes {
                 rpass.set_pipeline(&self.grid_pipeline);
                 rpass.set_bind_group(0, &self.grid_bind_group, &[]);
                 rpass.set_vertex_buffer(0, self.grid_vertex_buffer.slice(..));
