@@ -74,6 +74,7 @@ pub struct CandleStore {
     pub block_size: usize,
     pub block_min: Vec<f64>,
     pub block_max: Vec<f64>,
+    pub block_max_vol: Vec<u32>,
     pub block_count: usize,
 
     pub time: Vec<f64>,
@@ -110,6 +111,7 @@ impl CandleStore {
             block_size: 256,
             block_min: vec![0.0; block_cap],
             block_max: vec![0.0; block_cap],
+            block_max_vol: vec![0u32; block_cap],
             block_count: 0,
 
             time: vec![0.0; cap],
@@ -279,6 +281,7 @@ impl CandleStore {
         if self.block_min.len() < num_blocks {
             self.block_min.resize(num_blocks, 0.0);
             self.block_max.resize(num_blocks, 0.0);
+            self.block_max_vol.resize(num_blocks, 0);
         }
         self.block_count = num_blocks;
 
@@ -287,6 +290,7 @@ impl CandleStore {
             let b_end = n.min(b_start + 256);
             let mut b_min = f64::INFINITY;
             let mut b_max = f64::NEG_INFINITY;
+            let mut b_max_vol = 0u32;
             for i in b_start..b_end {
                 if (self.flags[i] & 1) != 0 {
                     continue;
@@ -294,11 +298,15 @@ impl CandleStore {
                 let i_off = i * 4;
                 let l = base + self.ohlc[i_off + 2] as f64;
                 let h = base + self.ohlc[i_off + 1] as f64;
+                let v = self.volume[i];
                 if l < b_min {
                     b_min = l;
                 }
                 if h > b_max {
                     b_max = h;
+                }
+                if v > b_max_vol {
+                    b_max_vol = v;
                 }
             }
             self.block_min[b] = if b_min.is_infinite() {
@@ -319,6 +327,7 @@ impl CandleStore {
             } else {
                 b_max
             };
+            self.block_max_vol[b] = b_max_vol;
         }
 
         Ok(())
@@ -381,9 +390,11 @@ impl CandleStore {
                 let next_cap = 16.max(self.block_min.len() * 2);
                 self.block_min.resize(next_cap, 0.0);
                 self.block_max.resize(next_cap, 0.0);
+                self.block_max_vol.resize(next_cap, 0);
             }
             self.block_min[b] = bar.low;
             self.block_max[b] = bar.high;
+            self.block_max_vol[b] = bar.volume;
             self.block_count = b + 1;
         } else {
             if bar.low < self.block_min[b] {
@@ -391,6 +402,9 @@ impl CandleStore {
             }
             if bar.high > self.block_max[b] {
                 self.block_max[b] = bar.high;
+            }
+            if bar.volume > self.block_max_vol[b] {
+                self.block_max_vol[b] = bar.volume;
             }
         }
 
@@ -443,6 +457,7 @@ impl CandleStore {
         let b_end = idx + 1;
         let mut b_min = f64::INFINITY;
         let mut b_max = f64::NEG_INFINITY;
+        let mut b_max_vol = 0u32;
         for i in b_start..b_end {
             if (self.flags[i] & 1) != 0 {
                 continue;
@@ -450,15 +465,20 @@ impl CandleStore {
             let i_off = i * 4;
             let l = base + self.ohlc[i_off + 2] as f64;
             let h = base + self.ohlc[i_off + 1] as f64;
+            let v = self.volume[i];
             if l < b_min {
                 b_min = l;
             }
             if h > b_max {
                 b_max = h;
             }
+            if v > b_max_vol {
+                b_max_vol = v;
+            }
         }
         self.block_min[b] = if b_min.is_infinite() { bar.low } else { b_min };
         self.block_max[b] = if b_max.is_infinite() { bar.high } else { b_max };
+        self.block_max_vol[b] = b_max_vol;
 
         idx
     }
@@ -562,7 +582,7 @@ impl CandleStore {
         bytemuck::cast_slice(&self.volume_instances[..self.count * 2])
     }
 
-    /// Maximum volume in the visible index range
+    /// Maximum volume in the visible index range (block-accelerated)
     pub fn get_visible_max_volume(&self, from_index: f64, to_index: f64) -> u32 {
         if self.count == 0 {
             return 1;
@@ -576,9 +596,41 @@ impl CandleStore {
         }
 
         let mut max_vol = 1u32;
-        for i in start..end {
-            if self.volume[i] > max_vol {
-                max_vol = self.volume[i];
+        let start_block = (start + 255) / 256;
+        let end_block = end / 256;
+
+        if start_block >= end_block {
+            for i in start..end {
+                let v = self.volume[i];
+                if v > max_vol {
+                    max_vol = v;
+                }
+            }
+        } else {
+            // Unaligned left fringe
+            let left_end = (start_block << 8).min(end);
+            for i in start..left_end {
+                let v = self.volume[i];
+                if v > max_vol {
+                    max_vol = v;
+                }
+            }
+
+            // Aligned blocks (256 bars per block)
+            for b in start_block..end_block {
+                let bv = self.block_max_vol[b];
+                if bv > max_vol {
+                    max_vol = bv;
+                }
+            }
+
+            // Unaligned right fringe
+            let right_start = end_block << 8;
+            for i in right_start..end {
+                let v = self.volume[i];
+                if v > max_vol {
+                    max_vol = v;
+                }
             }
         }
         max_vol
@@ -596,6 +648,7 @@ impl CandleStore {
         if self.block_min.len() < block_cap {
             self.block_min.resize(block_cap, 0.0);
             self.block_max.resize(block_cap, 0.0);
+            self.block_max_vol.resize(block_cap, 0);
         }
     }
 }

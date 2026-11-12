@@ -502,7 +502,11 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                             }
                         }
 
-                        let max_vol = store.get_visible_max_volume(from_index, from_index + bars_visible) as f32;
+                        let max_vol = if show_volume {
+                            store.get_visible_max_volume(from_index, from_index + bars_visible) as f32
+                        } else {
+                            1.0
+                        };
 
                         let view_params = ViewParams {
                             from_index: from_index as f32,

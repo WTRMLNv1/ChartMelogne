@@ -266,12 +266,12 @@ export component AppWindow inherits Window {
 
             // 7. Three-dot menu button in top right of plot area
             menu_btn := Rectangle {
-                x: parent.width - 36px;
+                x: root.plot_width - 36px;
                 y: 10px;
                 width: 26px;
                 height: 26px;
                 border-radius: 4px;
-                background: menu_touch.has-hover ? #2a2e39 : (root.menu_open ? #2a2e39 : #1e222d.with-alpha(0.85));
+                background: menu_touch.has-hover ? #2a2e39 : (root.menu_open ? #2a2e39 : #1e222d);
                 border-width: 1px;
                 border-color: root.menu_open ? #2962ff : #363a45;
 
@@ -293,15 +293,13 @@ export component AppWindow inherits Window {
 
             // 8. Dropdown Menu popup with checkboxes for flags
             if root.menu_open : Rectangle {
-                x: parent.width - 200px;
+                x: root.plot_width - 200px;
                 y: 42px;
                 width: 190px;
                 background: #1e222d;
                 border-radius: 6px;
                 border-width: 1px;
                 border-color: #363a45;
-                drop-shadow-blur: 10px;
-                drop-shadow-color: #000000.with-alpha(0.7);
 
                 VerticalLayout {
                     padding: 6px;
