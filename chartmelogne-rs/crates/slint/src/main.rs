@@ -17,7 +17,10 @@ OPTIONS:
     --show-axes, --axes               Show price and time axes (default)
     --no-axes, --hide-axes            Hide price and time axes
 
-    --chart-type <TYPE>               Set chart type: candlestick (default)
+    --chart-type <TYPE>               Set chart type: candlestick (default), line, area
+    --candlestick, --candles          Shorthand for --chart-type candlestick
+    --line                            Shorthand for --chart-type line
+    --area                            Shorthand for --chart-type area
 
     --show-volume, --volume           Show volume histogram (default)
     --no-volume, --hide-volume        Hide volume histogram
@@ -73,7 +76,7 @@ fn parse_args() -> ChartAppConfig {
                         }
                     }
                 } else {
-                    eprintln!("Error: --chart-type requires a value (e.g. candlestick)");
+                    eprintln!("Error: --chart-type requires a value (e.g. candlestick, line, area)");
                     std::process::exit(1);
                 }
             }
@@ -86,6 +89,15 @@ fn parse_args() -> ChartAppConfig {
                         std::process::exit(1);
                     }
                 }
+            }
+            "--candlestick" | "--candles" => {
+                config.chart_type = ChartType::Candlestick;
+            }
+            "--line" => {
+                config.chart_type = ChartType::Line;
+            }
+            "--area" => {
+                config.chart_type = ChartType::Area;
             }
             "--show-volume" | "--volume" => {
                 config.show_volume = true;

@@ -345,17 +345,7 @@ export component AppWindow inherits Window {
                         }
                     }
 
-                    // 3. Candlesticks (Chart type)
-                    CheckboxMenuItem {
-                        text: "Candlesticks";
-                        checked: root.chart_type == "candlestick";
-                        toggled => {
-                            root.chart_type = (root.chart_type == "candlestick") ? "none" : "candlestick";
-                            root.toggle_chart_type(root.chart_type);
-                        }
-                    }
-
-                    // 4. Show volume
+                    // 3. Show volume
                     CheckboxMenuItem {
                         text: "Show volume";
                         checked: root.show_volume;
@@ -365,13 +355,63 @@ export component AppWindow inherits Window {
                         }
                     }
 
-                    // 5. Show indicators
+                    // 4. Show indicators
                     CheckboxMenuItem {
                         text: "Show indicators";
                         checked: root.show_indicators;
                         toggled => {
                             root.show_indicators = !root.show_indicators;
                             root.toggle_show_indicators(root.show_indicators);
+                        }
+                    }
+
+                    // Separator
+                    Rectangle {
+                        height: 1px;
+                        background: #2a2e39;
+                    }
+
+                    // Chart Type Header
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        padding-top: 4px;
+                        padding-bottom: 2px;
+                        Text {
+                            text: "Chart Type";
+                            color: #787b86;
+                            font-size: 11px;
+                            font-weight: 700;
+                        }
+                    }
+
+                    // 5. Candlestick
+                    CheckboxMenuItem {
+                        text: "Candlestick";
+                        checked: root.chart_type == "candlestick";
+                        toggled => {
+                            root.chart_type = "candlestick";
+                            root.toggle_chart_type("candlestick");
+                        }
+                    }
+
+                    // 6. Line
+                    CheckboxMenuItem {
+                        text: "Line";
+                        checked: root.chart_type == "line";
+                        toggled => {
+                            root.chart_type = "line";
+                            root.toggle_chart_type("line");
+                        }
+                    }
+
+                    // 7. Area
+                    CheckboxMenuItem {
+                        text: "Area";
+                        checked: root.chart_type == "area";
+                        toggled => {
+                            root.chart_type = "area";
+                            root.toggle_chart_type("area");
                         }
                     }
                 }

@@ -25,6 +25,7 @@ pub const UNIT_VERTICES: [f32; 36] = [
 pub const CANDLE_SHADER_SRC: &str = include_str!("candle.wgsl");
 pub const GRID_SHADER_SRC: &str = include_str!("grid.wgsl");
 pub const VOLUME_SHADER_SRC: &str = include_str!("volume.wgsl");
+pub const LINE_SHADER_SRC: &str = include_str!("line.wgsl");
 
 pub const HISTOGRAM_UNIT_VERTICES: [f32; 12] = [
     -0.5, 0.0,
@@ -70,6 +71,24 @@ pub struct VolumeUniforms {
     pub _pad: f32,
     pub up_color: [f32; 4],
     pub down_color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct LineUniforms {
+    pub viewport_px: [f32; 2],
+    pub px_per_bar: f32,
+    pub from_index: f32,
+    pub y_scale: f32,
+    pub y_offset: f32,
+    pub dpr: f32,
+    pub line_width: f32,
+    pub is_area: f32,
+    pub _pad0: f32,
+    pub _pad1: f32,
+    pub _pad2: f32,
+    pub color: [f32; 4],
+    pub bottom_color: [f32; 4],
 }
 
 /// Rendering parameters passed per frame
@@ -155,6 +174,12 @@ pub struct ChartRenderer {
     volume_buffer: wgpu::Buffer,
     volume_capacity: usize,
     volume_count: usize,
+
+    line_pipeline: wgpu::RenderPipeline,
+    line_uniform_buffer: wgpu::Buffer,
+    line_bind_group: wgpu::BindGroup,
+    area_uniform_buffer: wgpu::Buffer,
+    area_bind_group: wgpu::BindGroup,
 
     plot_width: u32,
     plot_height: u32,
@@ -491,7 +516,121 @@ impl ChartRenderer {
             cache: None,
         });
 
-        // 4. Texture setup
+        // 4. Line / Area pipeline
+        let line_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Line Shader"),
+            source: wgpu::ShaderSource::Wgsl(LINE_SHADER_SRC.into()),
+        });
+
+        let line_uniform_size = std::mem::size_of::<LineUniforms>() as u64;
+        let line_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Line Uniform Buffer"),
+            size: line_uniform_size,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let area_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Area Uniform Buffer"),
+            size: line_uniform_size,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let line_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Line Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let line_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Line Bind Group"),
+            layout: &line_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: line_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        let area_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Area Bind Group"),
+            layout: &line_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: area_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        let line_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Line Pipeline Layout"),
+                bind_group_layouts: &[Some(&line_bind_group_layout)],
+                immediate_size: 0,
+            });
+
+        let line_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Line Render Pipeline"),
+            layout: Some(&line_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &line_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: 16,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &[wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x4,
+                            offset: 0,
+                            shader_location: 0,
+                        }],
+                    }),
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: 16,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &[wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x4,
+                            offset: 0,
+                            shader_location: 1,
+                        }],
+                    }),
+                ],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &line_shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // 5. Texture setup
         let plot_width = 1;
         let plot_height = 1;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -535,6 +674,11 @@ impl ChartRenderer {
             volume_buffer,
             volume_capacity: initial_capacity,
             volume_count: 0,
+            line_pipeline,
+            line_uniform_buffer,
+            line_bind_group,
+            area_uniform_buffer,
+            area_bind_group,
             plot_width,
             plot_height,
             texture,
@@ -873,6 +1017,72 @@ impl ChartRenderer {
                 .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
         }
 
+        // --- LINE / AREA PASS SETUP ---
+        let seg_count = if view.count >= 2 { view.count - 1 } else { 0 };
+        let last_seg = ((view.from_index + bars_visible + 2.0).ceil() as isize)
+            .min(seg_count as isize - 1)
+            .max(0) as u32;
+
+        let should_draw_line = (view.chart_type == chartmelogne_core::types::ChartType::Line
+            || view.chart_type == chartmelogne_core::types::ChartType::Area)
+            && seg_count > 0
+            && first <= last_seg
+            && (first as usize) < seg_count;
+
+        if should_draw_line {
+            let y_span = view.y_max - view.y_min;
+            let y_scale = if y_span > 0.0 {
+                (self.plot_height as f32) / y_span
+            } else {
+                1.0
+            };
+            let y_offset = view.y_min - view.base_price;
+
+            let line_uniforms = LineUniforms {
+                viewport_px: [self.plot_width as f32, self.plot_height as f32],
+                px_per_bar: view.px_per_bar,
+                from_index: view.from_index,
+                y_scale,
+                y_offset,
+                dpr: view.dpr,
+                line_width: 2.0,
+                is_area: 0.0,
+                _pad0: 0.0,
+                _pad1: 0.0,
+                _pad2: 0.0,
+                color: [0.1608, 0.3843, 1.0, 1.0],
+                bottom_color: [0.0, 0.0, 0.0, 0.0],
+            };
+            self.queue.write_buffer(
+                &self.line_uniform_buffer,
+                0,
+                bytemuck::bytes_of(&line_uniforms),
+            );
+
+            if view.chart_type == chartmelogne_core::types::ChartType::Area {
+                let area_uniforms = LineUniforms {
+                    viewport_px: [self.plot_width as f32, self.plot_height as f32],
+                    px_per_bar: view.px_per_bar,
+                    from_index: view.from_index,
+                    y_scale,
+                    y_offset,
+                    dpr: view.dpr,
+                    line_width: 0.0,
+                    is_area: 1.0,
+                    _pad0: 0.0,
+                    _pad1: 0.0,
+                    _pad2: 0.0,
+                    color: [0.1608, 0.3843, 1.0, 0.30],
+                    bottom_color: [0.1608, 0.3843, 1.0, 0.0],
+                };
+                self.queue.write_buffer(
+                    &self.area_uniform_buffer,
+                    0,
+                    bytemuck::bytes_of(&area_uniforms),
+                );
+            }
+        }
+
         // --- COMBINED RENDER PASS ---
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -916,6 +1126,23 @@ impl ChartRenderer {
                 rpass.set_vertex_buffer(0, self.unit_buffer.slice(..));
                 rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
                 rpass.draw(0..12, first..(last + 1));
+            }
+
+            // 4. Draw Line / Area
+            if should_draw_line {
+                if view.chart_type == chartmelogne_core::types::ChartType::Area {
+                    rpass.set_pipeline(&self.line_pipeline);
+                    rpass.set_bind_group(0, &self.area_bind_group, &[]);
+                    rpass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+                    rpass.set_vertex_buffer(1, self.instance_buffer.slice(16..));
+                    rpass.draw(0..6, first..(last_seg + 1));
+                }
+
+                rpass.set_pipeline(&self.line_pipeline);
+                rpass.set_bind_group(0, &self.line_bind_group, &[]);
+                rpass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+                rpass.set_vertex_buffer(1, self.instance_buffer.slice(16..));
+                rpass.draw(0..6, first..(last_seg + 1));
             }
         }
     }
