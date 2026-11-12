@@ -222,7 +222,75 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
         });
     }
 
-    // 4. Pointer Moved (Crosshair & Hover)
+    // 6. Toggle Allow Zoom Callback
+    {
+        let st_rc = Rc::clone(&state);
+        let ui_handle = ui.as_weak();
+        ui.on_toggle_allow_zoom(move |val| {
+            let mut st = st_rc.borrow_mut();
+            st.allow_zoom = val;
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.window().request_redraw();
+            }
+        });
+    }
+
+    // 7. Toggle Show Axes Callback
+    {
+        let st_rc = Rc::clone(&state);
+        let ui_handle = ui.as_weak();
+        ui.on_toggle_show_axes(move |val| {
+            let mut st = st_rc.borrow_mut();
+            st.show_axes = val;
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.window().request_redraw();
+            }
+        });
+    }
+
+    // 8. Toggle Chart Type Callback
+    {
+        let st_rc = Rc::clone(&state);
+        let ui_handle = ui.as_weak();
+        ui.on_toggle_chart_type(move |val| {
+            let mut st = st_rc.borrow_mut();
+            use std::str::FromStr;
+            if let Ok(ct) = chartmelogne_core::types::ChartType::from_str(val.as_str()) {
+                st.chart_type = ct;
+            }
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.window().request_redraw();
+            }
+        });
+    }
+
+    // 9. Toggle Show Volume Callback
+    {
+        let st_rc = Rc::clone(&state);
+        let ui_handle = ui.as_weak();
+        ui.on_toggle_show_volume(move |val| {
+            let mut st = st_rc.borrow_mut();
+            st.show_volume = val;
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.window().request_redraw();
+            }
+        });
+    }
+
+    // 10. Toggle Show Indicators Callback
+    {
+        let st_rc = Rc::clone(&state);
+        let ui_handle = ui.as_weak();
+        ui.on_toggle_show_indicators(move |val| {
+            let mut st = st_rc.borrow_mut();
+            st.show_indicators = val;
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.window().request_redraw();
+            }
+        });
+    }
+
+    // 11. Pointer Moved (Crosshair & Hover)
     {
         let st_rc = Rc::clone(&state);
         let ui_handle = ui.as_weak();

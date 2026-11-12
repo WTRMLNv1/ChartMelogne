@@ -59,6 +59,7 @@ pub struct Theme {
 pub enum ChartType {
     #[default]
     Candlestick,
+    None,
 }
 
 impl std::str::FromStr for ChartType {
@@ -67,6 +68,7 @@ impl std::str::FromStr for ChartType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "candlestick" | "candlesticks" | "candle" | "candles" => Ok(ChartType::Candlestick),
+            "none" | "hidden" => Ok(ChartType::None),
             other => Err(format!(
                 "Unknown chart type '{other}'. Only 'candlestick' is currently supported."
             )),
@@ -78,6 +80,7 @@ impl std::fmt::Display for ChartType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ChartType::Candlestick => write!(f, "candlestick"),
+            ChartType::None => write!(f, "none"),
         }
     }
 }
