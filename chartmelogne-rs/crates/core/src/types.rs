@@ -149,3 +149,60 @@ pub enum TimeZoomLevel {
     Daily,
     Monthly,
 }
+
+/// Host-calculated technical indicator data rendered as an overlay line.
+///
+/// ChartMelogne does not compute indicator formulas internally; the host
+/// application computes values and supplies them to the chart.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HostIndicator {
+    /// Unique identifier for this indicator series (e.g. "ema_20")
+    pub id: String,
+    /// Human-readable display label for HUD and legends (e.g. "EMA 20")
+    pub name: String,
+    /// RGBA line color with components in 0.0..1.0
+    pub color: [f32; 4],
+    /// Stroke width in logical pixels (default: 1.5)
+    pub line_width: f32,
+    /// Pre-calculated values per bar index. None represents warmup/missing periods.
+    pub values: Vec<Option<f64>>,
+    /// Whether this indicator is currently visible
+    pub visible: bool,
+}
+
+impl HostIndicator {
+    pub fn new(name: impl Into<String>, color: [f32; 4], values: Vec<Option<f64>>) -> Self {
+        let name_str = name.into();
+        Self {
+            id: name_str.clone(),
+            name: name_str,
+            color,
+            line_width: 1.5,
+            values,
+            visible: true,
+        }
+    }
+
+    pub fn from_f64_slice(name: impl Into<String>, color: [f32; 4], slice: &[f64]) -> Self {
+        let values = slice
+            .iter()
+            .map(|&v| if v.is_nan() { None } else { Some(v) })
+            .collect();
+        Self::new(name, color, values)
+    }
+
+    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+        self.id = id.into();
+        self
+    }
+
+    pub fn with_line_width(mut self, width: f32) -> Self {
+        self.line_width = width;
+        self
+    }
+
+    pub fn with_visibility(mut self, visible: bool) -> Self {
+        self.visible = visible;
+        self
+    }
+}

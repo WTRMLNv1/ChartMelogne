@@ -1,4 +1,4 @@
-use crate::types::{Bar, CandleData, ValidationError};
+use crate::types::{Bar, CandleData, HostIndicator, ValidationError};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MemoryDetails {
@@ -90,6 +90,7 @@ pub struct CandleStore {
     pub volume_instances: Vec<f32>,
 
     pub scratch_instance: [f32; 4],
+    pub indicators: Vec<HostIndicator>,
 }
 
 impl CandleStore {
@@ -121,6 +122,7 @@ impl CandleStore {
             volume_instances: vec![0.0f32; cap * 2],
 
             scratch_instance: [0.0; 4],
+            indicators: Vec::new(),
         }
     }
 
@@ -157,6 +159,44 @@ impl CandleStore {
     #[inline]
     pub fn get_close(&self, i: usize) -> f64 {
         self.base_price + self.ohlc[i * 4 + 3] as f64
+    }
+
+    /// Register or replace a host-provided indicator
+    pub fn add_indicator(&mut self, indicator: HostIndicator) {
+        if let Some(pos) = self.indicators.iter().position(|i| i.id == indicator.id) {
+            self.indicators[pos] = indicator;
+        } else {
+            self.indicators.push(indicator);
+        }
+    }
+
+    /// Remove an indicator by its id
+    pub fn remove_indicator(&mut self, id: &str) -> bool {
+        if let Some(pos) = self.indicators.iter().position(|i| i.id == id) {
+            self.indicators.remove(pos);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Remove all registered indicators
+    pub fn clear_indicators(&mut self) {
+        self.indicators.clear();
+    }
+
+    /// Convert indicator values into relative f32 offsets for GPU uploading.
+    /// NaN is used to represent missing or warmup bars.
+    pub fn get_indicator_relative_f32(&self, indicator: &HostIndicator) -> Vec<f32> {
+        let mut out = Vec::with_capacity(indicator.values.len());
+        let base = self.base_price;
+        for &val in &indicator.values {
+            match val {
+                Some(v) => out.push((v - base) as f32),
+                None => out.push(f32::NAN),
+            }
+        }
+        out
     }
 
     pub fn get_bar(&self, i: usize) -> Bar {

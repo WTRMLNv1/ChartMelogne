@@ -2,9 +2,9 @@ pub use chartmelogne_core::{
     candle_store::CandleStore,
     format::{format_volume, to_fixed},
     price_axis::{generate_price_ticks_into, PriceTickOptions},
-    synthetic::{generate_synthetic_candles, SyntheticDataOptions},
+    synthetic::{compute_ema, compute_sma, generate_synthetic_candles, SyntheticDataOptions},
     time_axis::{TimeAxis, TimeAxisOptions},
-    types::{CandleData, ChartType, ViewportMode},
+    types::{CandleData, ChartType, HostIndicator, ViewportMode},
     viewport::Viewport,
 };
 pub use chartmelogne_render::{ChartRenderer, ViewParams};
@@ -21,6 +21,7 @@ pub struct ChartAppConfig {
     pub chart_type: ChartType,
     pub show_volume: bool,
     pub show_indicators: bool,
+    pub indicators: Vec<HostIndicator>,
 }
 
 impl Default for ChartAppConfig {
@@ -32,6 +33,16 @@ impl Default for ChartAppConfig {
             ..Default::default()
         };
         let candle_data = generate_synthetic_candles(options);
+
+        // Host provides pre-calculated indicators
+        let ema20 = compute_ema(&candle_data.close, 20);
+        let sma50 = compute_sma(&candle_data.close, 50);
+
+        let indicators = vec![
+            HostIndicator::new("EMA 20", [0.941, 0.725, 0.043, 1.0], ema20),
+            HostIndicator::new("SMA 50", [0.612, 0.153, 0.690, 1.0], sma50),
+        ];
+
         Self {
             candle_data,
             utc_offset_minutes: 330,
@@ -39,7 +50,8 @@ impl Default for ChartAppConfig {
             show_axes: true,
             chart_type: ChartType::Candlestick,
             show_volume: true,
-            show_indicators: false,
+            show_indicators: true,
+            indicators,
         }
     }
 }
@@ -63,8 +75,8 @@ pub struct ChartAppState {
 }
 
 /// Macro that connects full chart interaction (panning, wheel zoom, tick generation,
-/// cursor crosshair, and wgpu 30 rendering loop) to any Slint window or component
-/// exposing the ChartWidget property and callback interface.
+/// cursor crosshair, host-provided indicators, and wgpu 30 rendering loop) to any Slint window
+/// or component exposing the ChartWidget property and callback interface.
 #[macro_export]
 macro_rules! attach_chart_controller {
     ($ui_expr:expr, $config_expr:expr) => {{
@@ -72,7 +84,7 @@ macro_rules! attach_chart_controller {
         use std::rc::Rc;
         use $crate::{
             format_volume, generate_price_ticks_into, to_fixed,
-            CandleStore, ChartAppState, ChartRenderer, ModelRc,
+            CandleStore, ChartAppState, ChartRenderer, IndicatorUi, ModelRc,
             PriceTickOptions, PriceTickUi, TimeAxis, TimeAxisOptions,
             TimeTickUi, VecModel, ViewParams, Viewport, ViewportMode,
         };
@@ -92,6 +104,10 @@ macro_rules! attach_chart_controller {
         store
             .set_data(&config.candle_data, true)
             .expect("CandleStore set_data failed");
+
+        for ind in &config.indicators {
+            store.add_indicator(ind.clone());
+        }
 
         let mut viewport = Viewport::new(chartmelogne_core::viewport::ViewportOptions::default());
         viewport.set_total_bars(count);
@@ -365,6 +381,18 @@ macro_rules! attach_chart_controller {
                         let st = st_rc.borrow();
                         renderer.upload_all(&st.store.ohlc, st.store.count());
                         renderer.upload_volume(&st.store.volume_instances, st.store.count());
+
+                        for ind in &st.store.indicators {
+                            let rel_vals = st.store.get_indicator_relative_f32(ind);
+                            renderer.upload_indicator(
+                                &ind.id,
+                                ind.color,
+                                ind.line_width,
+                                &rel_vals,
+                                ind.values.len(),
+                            );
+                        }
+
                         let mut r_slot = r_rc.borrow_mut();
                         *r_slot = Some(renderer);
                     }
@@ -489,8 +517,8 @@ macro_rules! attach_chart_controller {
                                 ui.set_last_price_visible(false);
                             }
 
-                            // 4. Crosshair and HUD
-                            if crosshair_active && logical_w > 0.0 && logical_h > 0.0 {
+                            // 4. Crosshair, OHLC HUD, and TradingView Style Indicator List
+                            let active_idx = if crosshair_active && logical_w > 0.0 && logical_h > 0.0 {
                                 let cx_phys = (crosshair_screen_x as f64) * (dpr as f64);
                                 let cy_phys = (crosshair_screen_y as f64) * (dpr as f64);
 
@@ -533,7 +561,42 @@ macro_rules! attach_chart_controller {
                                     } else {
                                         slint::Color::from_argb_u8(255, 242, 54, 69)
                                     });
+
+                                    Some(hovered_idx)
+                                } else {
+                                    None
                                 }
+                            } else {
+                                None
+                            };
+
+                            // Update TradingView Style Indicator HUD items
+                            if show_indicators && !store.indicators.is_empty() {
+                                let target_idx = active_idx.unwrap_or_else(|| {
+                                    if store.count() > 0 { store.count() - 1 } else { 0 }
+                                });
+                                let mut ui_indicators = Vec::with_capacity(store.indicators.len());
+                                for ind in &store.indicators {
+                                    if !ind.visible {
+                                        continue;
+                                    }
+                                    let val_str = match ind.values.get(target_idx) {
+                                        Some(Some(v)) => to_fixed(*v, 2),
+                                        _ => "n/a".to_string(),
+                                    };
+                                    let c = slint::Color::from_argb_u8(
+                                        (ind.color[3] * 255.0).round() as u8,
+                                        (ind.color[0] * 255.0).round() as u8,
+                                        (ind.color[1] * 255.0).round() as u8,
+                                        (ind.color[2] * 255.0).round() as u8,
+                                    );
+                                    ui_indicators.push(IndicatorUi {
+                                        name: ind.name.clone().into(),
+                                        value: val_str.into(),
+                                        color: c,
+                                    });
+                                }
+                                ui.set_indicators(ModelRc::new(VecModel::from(ui_indicators)));
                             }
 
                             let max_vol = if show_volume && should_render {

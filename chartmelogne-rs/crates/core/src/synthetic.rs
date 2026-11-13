@@ -103,3 +103,52 @@ pub fn generate_synthetic_candles(options: SyntheticDataOptions) -> CandleData {
         flags: Some(flags),
     }
 }
+
+/// Helper for demos and tests: computes a simple moving average (SMA).
+/// The first `period - 1` entries are `None`.
+pub fn compute_sma(values: &[f64], period: usize) -> Vec<Option<f64>> {
+    let mut out = Vec::with_capacity(values.len());
+    if period == 0 || values.is_empty() {
+        return vec![None; values.len()];
+    }
+    let mut sum = 0.0;
+    for (i, &v) in values.iter().enumerate() {
+        sum += v;
+        if i + 1 >= period {
+            if i >= period {
+                sum -= values[i - period];
+            }
+            out.push(Some(sum / period as f64));
+        } else {
+            out.push(None);
+        }
+    }
+    out
+}
+
+/// Helper for demos and tests: computes an exponential moving average (EMA).
+/// The first `period - 1` entries are `None`.
+pub fn compute_ema(values: &[f64], period: usize) -> Vec<Option<f64>> {
+    let mut out = Vec::with_capacity(values.len());
+    if period == 0 || values.is_empty() {
+        return vec![None; values.len()];
+    }
+    let k = 2.0 / (period as f64 + 1.0);
+    let mut prev_ema = None;
+
+    for (i, &v) in values.iter().enumerate() {
+        if i + 1 < period {
+            out.push(None);
+        } else if i + 1 == period {
+            let sum: f64 = values[..period].iter().sum();
+            let initial = sum / period as f64;
+            prev_ema = Some(initial);
+            out.push(Some(initial));
+        } else {
+            let current_ema = v * k + prev_ema.unwrap() * (1.0 - k);
+            prev_ema = Some(current_ema);
+            out.push(Some(current_ema));
+        }
+    }
+    out
+}

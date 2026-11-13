@@ -127,6 +127,28 @@ pub fn update_last_volume(&mut self, bar: &[f32; 2], index: usize)
 ```
 In-place 8-byte write for streaming the active bar's volume.
 
+##### `upload_indicator`
+```rust
+pub fn upload_indicator(
+    &mut self,
+    id: &str,
+    color: [f32; 4],
+    line_width: f32,
+    values_relative: &[f32],
+    count: usize,
+)
+```
+Uploads or updates an indicator series directly on the GPU.
+- `values_relative`: `f32` offsets relative to `base_price` (use `f32::NAN` for missing/warmup bars).
+- `indicator.wgsl` automatically detects `NaN` and clips degenerate segments without vertex artifacts.
+
+##### `remove_indicator` & `clear_indicators`
+```rust
+pub fn remove_indicator(&mut self, id: &str) -> bool
+pub fn clear_indicators(&mut self)
+```
+Removes a specific indicator or all indicators from GPU memory.
+
 #### Frame Execution
 
 ##### `render`
@@ -229,6 +251,23 @@ pub struct LineUniforms {
     pub _pad2: f32,
     pub color: [f32; 4],
     pub bottom_color: [f32; 4],
+}
+```
+
+### `IndicatorUniforms` (48 Bytes)
+
+```rust
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct IndicatorUniforms {
+    pub viewport_px: [f32; 2],
+    pub px_per_bar: f32,
+    pub from_index: f32,
+    pub y_scale: f32,
+    pub y_offset: f32,
+    pub dpr: f32,
+    pub line_width: f32,
+    pub color: [f32; 4],
 }
 ```
 

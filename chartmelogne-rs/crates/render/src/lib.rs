@@ -26,6 +26,7 @@ pub const CANDLE_SHADER_SRC: &str = include_str!("candle.wgsl");
 pub const GRID_SHADER_SRC: &str = include_str!("grid.wgsl");
 pub const VOLUME_SHADER_SRC: &str = include_str!("volume.wgsl");
 pub const LINE_SHADER_SRC: &str = include_str!("line.wgsl");
+pub const INDICATOR_SHADER_SRC: &str = include_str!("indicator.wgsl");
 
 pub const HISTOGRAM_UNIT_VERTICES: [f32; 12] = [
     -0.5, 0.0,
@@ -92,6 +93,30 @@ pub struct LineUniforms {
     pub _pad2: f32,
     pub color: [f32; 4],
     pub bottom_color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct IndicatorUniforms {
+    pub viewport_px: [f32; 2],
+    pub px_per_bar: f32,
+    pub from_index: f32,
+    pub y_scale: f32,
+    pub y_offset: f32,
+    pub dpr: f32,
+    pub line_width: f32,
+    pub color: [f32; 4],
+}
+
+pub struct IndicatorGpuBuffer {
+    pub id: String,
+    pub color: [f32; 4],
+    pub line_width: f32,
+    pub buffer: wgpu::Buffer,
+    pub capacity: usize,
+    pub count: usize,
+    pub uniform_buffer: wgpu::Buffer,
+    pub bind_group: wgpu::BindGroup,
 }
 
 /// Rendering parameters passed per frame
@@ -184,6 +209,10 @@ pub struct ChartRenderer {
     line_bind_group: wgpu::BindGroup,
     area_uniform_buffer: wgpu::Buffer,
     area_bind_group: wgpu::BindGroup,
+
+    indicator_pipeline: wgpu::RenderPipeline,
+    indicator_bind_group_layout: wgpu::BindGroupLayout,
+    indicators: Vec<IndicatorGpuBuffer>,
 
     plot_width: u32,
     plot_height: u32,
@@ -634,7 +663,88 @@ impl ChartRenderer {
             cache: None,
         });
 
-        // 5. Texture setup
+        // 5. Indicator pipeline
+        let indicator_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Indicator Shader"),
+            source: wgpu::ShaderSource::Wgsl(INDICATOR_SHADER_SRC.into()),
+        });
+
+        let indicator_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Indicator Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let indicator_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Indicator Pipeline Layout"),
+                bind_group_layouts: &[Some(&indicator_bind_group_layout)],
+                immediate_size: 0,
+            });
+
+        let indicator_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Indicator Render Pipeline"),
+            layout: Some(&indicator_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &indicator_shader,
+                entry_point: Some("vs_indicator"),
+                compilation_options: Default::default(),
+                buffers: &[
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: 4,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &[wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32,
+                            offset: 0,
+                            shader_location: 0,
+                        }],
+                    }),
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: 4,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &[wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32,
+                            offset: 0,
+                            shader_location: 1,
+                        }],
+                    }),
+                ],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &indicator_shader,
+                entry_point: Some("fs_indicator"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // 6. Texture setup
         let plot_width = 1;
         let plot_height = 1;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -684,6 +794,9 @@ impl ChartRenderer {
             line_bind_group,
             area_uniform_buffer,
             area_bind_group,
+            indicator_pipeline,
+            indicator_bind_group_layout,
+            indicators: Vec::new(),
             plot_width,
             plot_height,
             texture,
@@ -879,6 +992,106 @@ impl ChartRenderer {
                 self.volume_count = index + 1;
             }
         }
+    }
+
+    /// Upload or update a host-calculated indicator series (4 bytes per bar relative to base_price).
+    pub fn upload_indicator(
+        &mut self,
+        id: &str,
+        color: [f32; 4],
+        line_width: f32,
+        values_relative: &[f32],
+        count: usize,
+    ) {
+        let needed_cap = (count + 1).max(1024);
+        let needed_bytes = (needed_cap * 4) as u64;
+
+        if let Some(pos) = self.indicators.iter().position(|i| i.id == id) {
+            let ind = &mut self.indicators[pos];
+            ind.color = color;
+            ind.line_width = line_width;
+
+            if needed_cap > ind.capacity {
+                ind.buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(&format!("Indicator Buffer {}", id)),
+                    size: needed_bytes,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                ind.capacity = needed_cap;
+            }
+
+            if count > 0 && values_relative.len() >= count {
+                self.queue.write_buffer(
+                    &ind.buffer,
+                    0,
+                    bytemuck::cast_slice(&values_relative[..count]),
+                );
+            }
+            ind.count = count;
+        } else {
+            let uniform_size = std::mem::size_of::<IndicatorUniforms>() as u64;
+            let uniform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(&format!("Indicator Uniform Buffer {}", id)),
+                size: uniform_size,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(&format!("Indicator Bind Group {}", id)),
+                layout: &self.indicator_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                }],
+            });
+
+            let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(&format!("Indicator Buffer {}", id)),
+                size: needed_bytes,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
+            if count > 0 && values_relative.len() >= count {
+                self.queue.write_buffer(
+                    &buffer,
+                    0,
+                    bytemuck::cast_slice(&values_relative[..count]),
+                );
+            }
+
+            self.indicators.push(IndicatorGpuBuffer {
+                id: id.to_string(),
+                color,
+                line_width,
+                buffer,
+                capacity: needed_cap,
+                count,
+                uniform_buffer,
+                bind_group,
+            });
+        }
+    }
+
+    /// Remove an indicator series from the GPU renderer.
+    pub fn remove_indicator(&mut self, id: &str) -> bool {
+        if let Some(pos) = self.indicators.iter().position(|i| i.id == id) {
+            self.indicators.remove(pos);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Remove all uploaded indicators from the GPU renderer.
+    pub fn clear_indicators(&mut self) {
+        self.indicators.clear();
+    }
+
+    pub fn indicators(&self) -> &[IndicatorGpuBuffer] {
+        &self.indicators
     }
 
     /// Render grid and candles into the target texture.
@@ -1107,6 +1320,35 @@ impl ChartRenderer {
             }
         }
 
+        // --- INDICATOR PASS SETUP ---
+        if view.show_indicators && !self.indicators.is_empty() {
+            let y_span = view.y_max - view.y_min;
+            let y_scale = if y_span > 0.0 {
+                (self.plot_height as f32) / y_span
+            } else {
+                1.0
+            };
+            let y_offset = view.y_min - view.base_price;
+
+            for ind in &self.indicators {
+                let ind_uniforms = IndicatorUniforms {
+                    viewport_px: [self.plot_width as f32, self.plot_height as f32],
+                    px_per_bar: view.px_per_bar,
+                    from_index: view.from_index,
+                    y_scale,
+                    y_offset,
+                    dpr: view.dpr,
+                    line_width: ind.line_width,
+                    color: ind.color,
+                };
+                self.queue.write_buffer(
+                    &ind.uniform_buffer,
+                    0,
+                    bytemuck::bytes_of(&ind_uniforms),
+                );
+            }
+        }
+
         // --- COMBINED RENDER PASS ---
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1167,6 +1409,24 @@ impl ChartRenderer {
                 rpass.set_vertex_buffer(0, self.instance_buffer.slice(..));
                 rpass.set_vertex_buffer(1, self.instance_buffer.slice(16..));
                 rpass.draw(0..6, first..(last_seg + 1));
+            }
+
+            // 5. Draw Host Indicators
+            if view.show_indicators {
+                for ind in &self.indicators {
+                    let seg_count = if ind.count >= 2 { ind.count - 1 } else { 0 };
+                    let last_seg = ((view.from_index + bars_visible + 2.0).ceil() as isize)
+                        .min(seg_count as isize - 1)
+                        .max(0) as u32;
+
+                    if seg_count > 0 && first <= last_seg && (first as usize) < seg_count {
+                        rpass.set_pipeline(&self.indicator_pipeline);
+                        rpass.set_bind_group(0, &ind.bind_group, &[]);
+                        rpass.set_vertex_buffer(0, ind.buffer.slice(..));
+                        rpass.set_vertex_buffer(1, ind.buffer.slice(4..));
+                        rpass.draw(0..6, first..(last_seg + 1));
+                    }
+                }
             }
         }
     }

@@ -190,3 +190,41 @@ fn test_instanced_draw_first_instance_and_instance_index() {
         pixel[1]
     );
 }
+
+#[test]
+fn test_indicator_rendering_pipeline() {
+    let (device, queue) = match common::create_test_device() {
+        Some(dq) => dq,
+        None => {
+            eprintln!("Skipping test: no GPU adapter found");
+            return;
+        }
+    };
+
+    let mut renderer = chartmelogne_render::ChartRenderer::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm);
+    renderer.resize(200, 100);
+
+    let values = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+    renderer.upload_indicator("test_sma", [1.0, 0.0, 0.0, 1.0], 2.0, &values, values.len());
+
+    assert_eq!(renderer.indicators().len(), 1);
+    assert_eq!(renderer.indicators()[0].id, "test_sma");
+
+    let view = chartmelogne_render::ViewParams {
+        from_index: 0.0,
+        px_per_bar: 20.0,
+        y_min: 0.0,
+        y_max: 60.0,
+        base_price: 0.0,
+        count: 5,
+        show_indicators: true,
+        ..Default::default()
+    };
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    renderer.render(&mut encoder, &view);
+    queue.submit(Some(encoder.finish()));
+
+    assert!(renderer.remove_indicator("test_sma"));
+    assert_eq!(renderer.indicators().len(), 0);
+}

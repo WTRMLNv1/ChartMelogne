@@ -1,5 +1,5 @@
-import { ChartWidget, PriceTickUi, TimeTickUi } from "chart_widget.slint";
-export { PriceTickUi, TimeTickUi }
+import { ChartWidget, IndicatorUi, PriceTickUi, TimeTickUi } from "chart_widget.slint";
+export { IndicatorUi, PriceTickUi, TimeTickUi }
 
 export component AppWindow inherits Window {
     title: "ChartMelogne - Rust + wgpu 30";
@@ -49,6 +49,7 @@ export component AppWindow inherits Window {
     in-out property <string> chart_type <=> chart.chart_type;
     in-out property <bool> show_volume <=> chart.show_volume;
     in-out property <bool> show_indicators <=> chart.show_indicators;
+    in-out property <[IndicatorUi]> indicators <=> chart.indicators;
     in-out property <bool> menu_open <=> chart.menu_open;
 
     // Callbacks to Rust
@@ -136,6 +137,7 @@ export component DashboardWindow inherits Window {
     in-out property <string> chart_type <=> chart.chart_type;
     in-out property <bool> show_volume <=> chart.show_volume;
     in-out property <bool> show_indicators <=> chart.show_indicators;
+    in-out property <[IndicatorUi]> indicators <=> chart.indicators;
 
     // Callbacks to Rust
     callback pointer_moved(length, length);

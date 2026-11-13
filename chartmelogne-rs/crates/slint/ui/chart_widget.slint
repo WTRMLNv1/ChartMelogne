@@ -8,6 +8,12 @@ export struct TimeTickUi {
     label: string,
 }
 
+export struct IndicatorUi {
+    name: string,
+    value: string,
+    color: color,
+}
+
 component CheckboxMenuItem inherits Rectangle {
     in-out property <string> text;
     in-out property <bool> checked;
@@ -108,6 +114,7 @@ export component ChartWidget inherits Rectangle {
     in-out property <bool> show_indicators: false;
     in-out property <bool> show_menu_button: true;
     in-out property <bool> menu_open: false;
+    in-out property <[IndicatorUi]> indicators: [];
 
     // Callbacks to Rust Controller / Host Window
     callback pointer_moved(length, length);
@@ -174,48 +181,84 @@ export component ChartWidget inherits Rectangle {
                 }
             }
 
-            // 4. Top-Left HUD (OHLCV)
-            if root.show_hud && root.hud_active : HorizontalLayout {
+            // 4. Top-Left HUD (OHLCV + TradingView Style Indicators List)
+            if root.show_hud && root.hud_active : VerticalLayout {
                 x: 12px;
                 y: 10px;
-                spacing: 12px;
+                spacing: 4px;
                 alignment: start;
 
+                // Row 1: OHLCV
                 HorizontalLayout {
-                    spacing: 4px;
+                    spacing: 12px;
                     alignment: start;
-                    Text { text: "O"; color: #787b86; font-size: 11px; }
-                    Text { text: root.hud_open; color: root.hud_ohlc_color; font-size: 11px; font-weight: 600; }
+
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: start;
+                        Text { text: "O"; color: #787b86; font-size: 11px; }
+                        Text { text: root.hud_open; color: root.hud_ohlc_color; font-size: 11px; font-weight: 600; }
+                    }
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: start;
+                        Text { text: "H"; color: #787b86; font-size: 11px; }
+                        Text { text: root.hud_high; color: root.hud_ohlc_color; font-size: 11px; font-weight: 600; }
+                    }
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: start;
+                        Text { text: "L"; color: #787b86; font-size: 11px; }
+                        Text { text: root.hud_low; color: root.hud_ohlc_color; font-size: 11px; font-weight: 600; }
+                    }
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: start;
+                        Text { text: "C"; color: #787b86; font-size: 11px; }
+                        Text { text: root.hud_close; color: root.hud_ohlc_color; font-size: 11px; font-weight: 600; }
+                    }
+                    if root.show_volume : HorizontalLayout {
+                        spacing: 4px;
+                        alignment: start;
+                        Text { text: "Vol"; color: #787b86; font-size: 11px; }
+                        Text { text: root.hud_volume; color: #787b86; font-size: 11px; font-weight: 600; }
+                    }
                 }
-                HorizontalLayout {
-                    spacing: 4px;
+
+                // Row 2+: TradingView style indicator list
+                if root.show_indicators : VerticalLayout {
+                    spacing: 3px;
                     alignment: start;
-                    Text { text: "H"; color: #787b86; font-size: 11px; }
-                    Text { text: root.hud_high; color: root.hud_ohlc_color; font-size: 11px; font-weight: 600; }
-                }
-                HorizontalLayout {
-                    spacing: 4px;
-                    alignment: start;
-                    Text { text: "L"; color: #787b86; font-size: 11px; }
-                    Text { text: root.hud_low; color: root.hud_ohlc_color; font-size: 11px; font-weight: 600; }
-                }
-                HorizontalLayout {
-                    spacing: 4px;
-                    alignment: start;
-                    Text { text: "C"; color: #787b86; font-size: 11px; }
-                    Text { text: root.hud_close; color: root.hud_ohlc_color; font-size: 11px; font-weight: 600; }
-                }
-                if root.show_volume : HorizontalLayout {
-                    spacing: 4px;
-                    alignment: start;
-                    Text { text: "Vol"; color: #787b86; font-size: 11px; }
-                    Text { text: root.hud_volume; color: #787b86; font-size: 11px; font-weight: 600; }
-                }
-                if root.show_indicators : HorizontalLayout {
-                    spacing: 4px;
-                    alignment: start;
-                    Text { text: "Ind"; color: #2962ff; font-size: 11px; font-weight: 600; }
-                    Text { text: "None"; color: #787b86; font-size: 11px; }
+
+                    for ind in root.indicators : HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+
+                        // Colored bullet dot
+                        Rectangle {
+                            width: 6px;
+                            height: 6px;
+                            border-radius: 3px;
+                            background: ind.color;
+                            y: 3px;
+                        }
+
+                        // Indicator name
+                        Text {
+                            text: ind.name;
+                            color: #a3a6af;
+                            font-size: 11px;
+                            font-weight: 500;
+                        }
+
+                        // Indicator value
+                        Text {
+                            text: ind.value;
+                            color: ind.color;
+                            font-size: 11px;
+                            font-weight: 600;
+                        }
+                    }
                 }
             }
 

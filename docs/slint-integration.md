@@ -51,6 +51,7 @@ Slint handles the windowing, event routing, and vector overlays (crosshairs, pri
 | **`chart_type`** | `string` | `"candlestick"` | **Optional / Configurable.** `"candlestick"`, `"line"`, or `"area"`. |
 | **`show_volume`** | `bool` | `true` | **Optional.** Toggles volume histogram and HUD volume display. |
 | **`show_indicators`**| `bool`| `false` | **Optional.** Toggles indicator overlays. |
+| `indicators` | `[IndicatorUi]` | `[]` | Dynamic indicator models (`name`, `value`, `color`) displayed in TradingView style HUD. |
 | **`allow_zoom`** | `bool` | `true` | **Optional.** Locks or unlocks mouse wheel and pinch-to-zoom. |
 | **`show_menu_button`**| `bool`| `true` | **Optional.** Toggles the built-in 3-dot options menu (turn off if your host window has its own toolbar). |
 | **`show_hud`** | `bool` | `true` | **Optional.** Toggles top-left OHLCV badges on cursor hover. |
@@ -143,6 +144,54 @@ fn main() -> Result<(), slint::PlatformError> {
 - **Left Panel (200px)**: Market watchlist with real-time selection highlighting.
 - **Center Panel**: The embedded `ChartWidget` stretching dynamically with window resizing.
 - **Right Panel (220px)**: Live order book ladder with Ask/Bid depth and quick Buy/Sell actions.
+
+---
+
+## Host-Provided Indicators & TradingView HUD Overlay
+
+`ChartMelogne` does not compute indicators internally; technical analysis calculations are cleanly owned by your host application. The host simply passes pre-computed line values with custom RGBA line colors, and `ChartMelogne` handles GPU instanced polyline rendering and the live TradingView-style HUD overlay.
+
+### 1. Defining Indicators in `ChartAppConfig`
+
+```rust
+use chartmelogne_core::types::HostIndicator;
+use chartmelogne_core::synthetic::{compute_ema, compute_sma};
+use chartmelogne_slint::{attach_chart_controller, ChartAppConfig};
+
+fn main() -> Result<(), slint::PlatformError> {
+    let app = MyTradingApp::new()?;
+
+    // Compute indicators in your host app or external TA library
+    let closes: Vec<f64> = /* historical close prices */;
+    let ema_values = compute_ema(&closes, 20);
+    let sma_values = compute_sma(&closes, 50);
+
+    // Create HostIndicator instances with custom RGBA colors
+    let ema20 = HostIndicator::new("EMA 20", [0.941, 0.725, 0.043, 1.0], ema_values); // Gold
+    let sma50 = HostIndicator::new("SMA 50", [0.612, 0.153, 0.690, 1.0], sma_values); // Purple
+
+    let mut config = ChartAppConfig::default();
+    config.indicators = vec![ema20, sma50];
+
+    // Connect controller to the Slint app
+    attach_chart_controller!(&app, &config);
+
+    app.run()
+}
+```
+
+### 2. TradingView-Style Indicator HUD
+
+When `show_hud` and `show_indicators` are enabled (or indicators are present):
+- The top-left HUD stacks indicators beneath the OHLCV status line.
+- Each indicator row displays:
+  1. A colored bullet dot matching the indicator line's exact RGBA color.
+  2. The indicator's display name (e.g. `EMA 20`).
+  3. The indicator's value at the hovered cursor bar (or the most recent bar when idle), highlighted in the indicator's color.
+  4. Automatic `n/a` display during warmup periods where the host indicator value is `None` or `NaN`.
+
+### 3. Warmup & Gap Handling
+Indicators often have warmup periods (e.g., the first 20 bars of an EMA 20). If `None` or `f64::NAN` is supplied for any candle index, the GPU shader (`indicator.wgsl`) automatically clips the corresponding line segment outside the viewport with zero overhead, cleanly resuming rendering as soon as valid numerical values begin.
 
 ---
 

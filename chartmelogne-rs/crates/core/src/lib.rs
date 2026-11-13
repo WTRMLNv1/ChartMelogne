@@ -12,7 +12,9 @@ pub use price_axis::{
     generate_price_ticks, generate_price_ticks_into, get_nice_price_step, get_precision,
     PriceTickOptions,
 };
-pub use synthetic::{generate_synthetic_candles, Mulberry32, SyntheticDataOptions};
+pub use synthetic::{
+    compute_ema, compute_sma, generate_synthetic_candles, Mulberry32, SyntheticDataOptions,
+};
 pub use time_axis::{civil_from_days, TimeAxis, TimeAxisOptions};
 pub use types::*;
 pub use viewport::{Viewport, ViewportOptions};

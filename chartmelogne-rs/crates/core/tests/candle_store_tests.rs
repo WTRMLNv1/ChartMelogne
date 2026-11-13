@@ -1,6 +1,6 @@
 use chartmelogne_core::candle_store::validate_candle_data;
 use chartmelogne_core::synthetic::{generate_synthetic_candles, SyntheticDataOptions};
-use chartmelogne_core::types::Bar;
+use chartmelogne_core::types::{Bar, HostIndicator};
 use chartmelogne_core::CandleStore;
 
 #[test]
@@ -306,4 +306,40 @@ fn test_block_accelerated_get_visible_min_max_matches_naive_scan() {
     let after_update = store.get_visible_min_max(0.0, store.count() as f64);
     assert!((after_update.1 - 88888.0).abs() < 0.05);
     assert!((after_update.0 - 0.5).abs() < 0.05);
+}
+
+#[test]
+fn test_host_indicator_registration_and_relative_conversion() {
+    let mut store = CandleStore::new(100, 0);
+    let data = generate_synthetic_candles(SyntheticDataOptions {
+        count: 100,
+        start_price: 500.0,
+        seed: 42,
+        ..Default::default()
+    });
+    store.set_data(&data, true).unwrap();
+
+    let sma10 = chartmelogne_core::synthetic::compute_sma(&data.close, 10);
+    assert_eq!(sma10.len(), 100);
+    assert!(sma10[0].is_none());
+    assert!(sma10[8].is_none());
+    assert!(sma10[9].is_some());
+
+    let ind = HostIndicator::new("SMA 10", [1.0, 0.5, 0.0, 1.0], sma10);
+    store.add_indicator(ind.clone());
+    assert_eq!(store.indicators.len(), 1);
+    assert_eq!(store.indicators[0].name, "SMA 10");
+
+    let rel = store.get_indicator_relative_f32(&ind);
+    assert_eq!(rel.len(), 100);
+    assert!(rel[0].is_nan());
+    assert!(rel[8].is_nan());
+    assert!(!rel[9].is_nan());
+
+    let expected_rel = (ind.values[9].unwrap() - store.base_price()) as f32;
+    assert!((rel[9] - expected_rel).abs() < 1e-5);
+
+    // Remove indicator
+    assert!(store.remove_indicator("SMA 10"));
+    assert_eq!(store.indicators.len(), 0);
 }

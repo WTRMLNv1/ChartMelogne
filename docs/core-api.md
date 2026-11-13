@@ -298,6 +298,66 @@ pub enum ChartType {
     Area,
 }
 
+---
+
+## 7. Host-Provided Indicators (`HostIndicator`)
+
+ChartMelogne does not compute indicator formulas internally (allowing developers to use any quantitative library, such as `ta-lib`, `polars`, or custom loops). The host application computes indicator values and passes them as a `HostIndicator`.
+
+```rust
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HostIndicator {
+    /// Unique identifier for this indicator series (e.g. "ema_20")
+    pub id: String,
+    /// Human-readable display label for HUD and legends (e.g. "EMA 20")
+    pub name: String,
+    /// RGBA line color with components in 0.0..1.0
+    pub color: [f32; 4],
+    /// Stroke width in logical pixels (default: 1.5)
+    pub line_width: f32,
+    /// Pre-calculated values per bar index. None represents warmup/missing periods.
+    pub values: Vec<Option<f64>>,
+    /// Whether this indicator is currently visible
+    pub visible: bool,
+}
+```
+
+### Constructors & Helpers
+
+```rust
+// 1. Create with Vec<Option<f64>> (None for warmup):
+let ind = HostIndicator::new("SMA 20", [0.941, 0.725, 0.043, 1.0], sma_values);
+
+// 2. Create from &[f64] slice with NaNs:
+let ind = HostIndicator::from_f64_slice("RSI 14", [0.612, 0.153, 0.690, 1.0], &raw_slice);
+
+// 3. Builder methods:
+let ind = ind.with_line_width(2.0).with_visibility(true);
+```
+
+### `CandleStore` Indicator Methods
+
+```rust
+// Register or replace indicator
+store.add_indicator(ind);
+
+// Remove by id
+store.remove_indicator("SMA 20");
+
+// Clear all
+store.clear_indicators();
+
+// Convert to f32 relative offsets for GPU streaming:
+let relative_f32 = store.get_indicator_relative_f32(&ind);
+```
+
+### Demo Calculation Helpers (`synthetic`)
+
+For unit testing and mock data generation, `chartmelogne_core::synthetic` provides:
+- `compute_sma(values: &[f64], period: usize) -> Vec<Option<f64>>`
+- `compute_ema(values: &[f64], period: usize) -> Vec<Option<f64>>`
+
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ViewportMode {
     Auto,
