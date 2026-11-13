@@ -82,7 +82,7 @@ pub struct TimeAxis {
 
     // Static / cached label tables
     minute_strings: Vec<String>,
-    day_month_strings: Vec<Vec<String>>,
+    day_month_strings: Vec<String>,
     month_year_cache: HashMap<i32, String>,
     month_short_year_cache: HashMap<i32, String>,
 
@@ -104,14 +104,12 @@ impl TimeAxis {
             }
         }
 
-        // Precompute all 32 * 12 "d MMM" strings
-        let mut day_month_strings = Vec::with_capacity(32);
+        // Precompute all 32 * 12 "d MMM" strings in a flat cache-friendly vector
+        let mut day_month_strings = Vec::with_capacity(32 * 12);
         for d in 0..=31 {
-            let mut row = Vec::with_capacity(12);
             for m in 0..12 {
-                row.push(format!("{} {}", d, MONTH_NAMES[m]));
+                day_month_strings.push(format!("{} {}", d, MONTH_NAMES[m]));
             }
-            day_month_strings.push(row);
         }
 
         Self {
@@ -180,7 +178,7 @@ impl TimeAxis {
         match level {
             TimeZoomLevel::Intraday => {
                 if is_day_start {
-                    self.day_month_strings[civil.day][civil.month].clone()
+                    self.day_month_strings[civil.day * 12 + civil.month].clone()
                 } else {
                     let ms_in_day = local_ms.rem_euclid(86_400_000.0);
                     let minute_index = ((ms_in_day / 60_000.0).floor() as usize).min(1439);
@@ -191,7 +189,7 @@ impl TimeAxis {
                 if is_month_start {
                     self.get_daily_month_start_string(civil.year, civil.month)
                 } else {
-                    self.day_month_strings[civil.day][civil.month].clone()
+                    self.day_month_strings[civil.day * 12 + civil.month].clone()
                 }
             }
             TimeZoomLevel::Monthly => {
@@ -215,13 +213,7 @@ impl TimeAxis {
         if let Some(s) = self.month_short_year_cache.get(&key) {
             return s.clone();
         }
-        let yy = (year.abs() % 100).to_string();
-        let yy_padded = if yy.len() < 2 {
-            format!("0{}", yy)
-        } else {
-            yy
-        };
-        let s = format!("{} '{}", MONTH_NAMES[month], yy_padded);
+        let s = format!("{} '{:02}", MONTH_NAMES[month], year.abs() % 100);
         self.month_short_year_cache.insert(key, s.clone());
         s
     }
@@ -361,7 +353,7 @@ impl TimeAxis {
                         let label = if is_month_start {
                             self.get_daily_month_start_string(civil.year, civil.month)
                         } else {
-                            self.day_month_strings[civil.day][civil.month].clone()
+                            self.day_month_strings[civil.day * 12 + civil.month].clone()
                         };
 
                         self.tick_pool.push(TimeTick {
@@ -394,7 +386,7 @@ impl TimeAxis {
                     let label = if is_day_start
                         || (i == start_idx && first_day_idx < d_count && active_starts[first_day_idx] as usize == i)
                     {
-                        self.day_month_strings[civil.day][civil.month].clone()
+                        self.day_month_strings[civil.day * 12 + civil.month].clone()
                     } else {
                         let ms_in_day = local_ms.rem_euclid(86_400_000.0);
                         let minute_index = ((ms_in_day / 60_000.0).floor() as usize).min(1439);
