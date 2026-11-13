@@ -39,28 +39,31 @@ pub fn get_nice_price_step(raw_step: f64) -> f64 {
     nice_frac * 10.0f64.powf(exp)
 }
 
-/// Derives the number of decimal places needed to represent the step.
+/// Derives the number of decimal places needed to represent the step without heap allocation.
 pub fn get_precision(step: f64) -> usize {
-    if step >= 1.0 {
+    if step >= 1.0 || !step.is_finite() || step <= 0.0 {
         return 2;
     }
-    let s = step.to_string();
-    if let Some(dot) = s.find('.') {
-        s.len() - dot - 1
-    } else {
-        0
+    let mut p = 0usize;
+    let mut val = step;
+    while p < 10 && (val - val.round()).abs() > 1e-5 {
+        val *= 10.0;
+        p += 1;
     }
+    p
 }
 
-/// Generates monotonic, evenly-spaced price ticks within [y_min, y_max].
-pub fn generate_price_ticks(
+/// Generates monotonic, evenly-spaced price ticks within [y_min, y_max] into a reusable Vec.
+pub fn generate_price_ticks_into(
     y_min: f64,
     y_max: f64,
     height_px: f64,
     options: &PriceTickOptions,
-) -> Vec<PriceTick> {
+    ticks: &mut Vec<PriceTick>,
+) {
+    ticks.clear();
     if !y_min.is_finite() || !y_max.is_finite() || y_max <= y_min || height_px <= 0.0 {
-        return Vec::new();
+        return;
     }
 
     let target_spacing = options.target_spacing_px.unwrap_or(50.0);
@@ -73,17 +76,15 @@ pub fn generate_price_ticks(
         .unwrap_or_else(|| get_precision(step));
 
     let start = (y_min / step).ceil() * step;
-    let mut ticks = Vec::new();
-
     let max_iterations = 200;
     let mut current = start;
     let mut iter = 0;
 
     let eps = step * 1e-6;
+    let factor = 10.0f64.powi(decimals as i32);
 
     while current <= y_max + eps && iter < max_iterations {
-        let fixed_str = to_fixed(current, decimals);
-        let rounded_price: f64 = fixed_str.parse().unwrap_or(current);
+        let rounded_price = (current * factor).round() / factor;
         let normalized_price = if rounded_price.abs() < eps {
             0.0
         } else {
@@ -98,6 +99,16 @@ pub fn generate_price_ticks(
         current += step;
         iter += 1;
     }
+}
 
+/// Generates monotonic, evenly-spaced price ticks within [y_min, y_max].
+pub fn generate_price_ticks(
+    y_min: f64,
+    y_max: f64,
+    height_px: f64,
+    options: &PriceTickOptions,
+) -> Vec<PriceTick> {
+    let mut ticks = Vec::new();
+    generate_price_ticks_into(y_min, y_max, height_px, options, &mut ticks);
     ticks
 }
