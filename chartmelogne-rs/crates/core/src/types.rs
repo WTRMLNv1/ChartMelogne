@@ -206,3 +206,125 @@ impl HostIndicator {
         self
     }
 }
+
+/// Direction for chart marker triangles (Up = Buy / Green, Down = Sell / Red).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MarkerDirection {
+    Up,
+    Down,
+}
+
+pub const DEFAULT_MARKER_UP_COLOR: [f32; 4] = [0.149, 0.651, 0.604, 1.0]; // Emerald Green (#26a69a)
+pub const DEFAULT_MARKER_DOWN_COLOR: [f32; 4] = [0.937, 0.325, 0.314, 1.0]; // Coral Red (#ef5350)
+
+/// A visual signal or trade marker placed at a specific candle index or timestamp, and price level.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChartMarker {
+    /// Candle index where the marker is placed (if pre-mapped by host)
+    pub candle_index: Option<usize>,
+    /// Timestamp in epoch seconds/ms (if time-based; auto-mapped to closest candle by store)
+    pub time: Option<f64>,
+    /// Price level in currency units
+    pub price: f64,
+    /// Up (triangle pointing up, green) or Down (triangle pointing down, red)
+    pub direction: MarkerDirection,
+    /// Optional RGBA color override. If None, Up defaults to green and Down defaults to red.
+    pub color: Option<[f32; 4]>,
+    /// Marker visual size in logical pixels (default: 10.0)
+    pub size: f32,
+    /// Optional textual label/tag (e.g. "BUY", "SELL", order quantity)
+    pub text: Option<String>,
+}
+
+impl ChartMarker {
+    /// Create a marker pre-mapped to a specific candle index
+    pub fn new(candle_index: usize, price: f64, direction: MarkerDirection) -> Self {
+        Self {
+            candle_index: Some(candle_index),
+            time: None,
+            price,
+            direction,
+            color: None,
+            size: 10.0,
+            text: None,
+        }
+    }
+
+    /// Create a marker at a specific timestamp (auto-mapped to the closest candle bar)
+    pub fn new_with_time(time: f64, price: f64, direction: MarkerDirection) -> Self {
+        Self {
+            candle_index: None,
+            time: Some(time),
+            price,
+            direction,
+            color: None,
+            size: 10.0,
+            text: None,
+        }
+    }
+
+    /// Helper to create an upward-pointing green triangle marker at a candle index
+    pub fn up(candle_index: usize, price: f64) -> Self {
+        Self::new(candle_index, price, MarkerDirection::Up)
+    }
+
+    /// Helper to create a downward-pointing red triangle marker at a candle index
+    pub fn down(candle_index: usize, price: f64) -> Self {
+        Self::new(candle_index, price, MarkerDirection::Down)
+    }
+
+    /// Helper to create an upward-pointing green triangle marker at a timestamp
+    pub fn up_at_time(time: f64, price: f64) -> Self {
+        Self::new_with_time(time, price, MarkerDirection::Up)
+    }
+
+    /// Helper to create a downward-pointing red triangle marker at a timestamp
+    pub fn down_at_time(time: f64, price: f64) -> Self {
+        Self::new_with_time(time, price, MarkerDirection::Down)
+    }
+
+    pub fn with_candle_index(mut self, candle_index: usize) -> Self {
+        self.candle_index = Some(candle_index);
+        self
+    }
+
+    pub fn with_time(mut self, time: f64) -> Self {
+        self.time = Some(time);
+        self
+    }
+
+    pub fn with_color(mut self, color: [f32; 4]) -> Self {
+        self.color = Some(color);
+        self
+    }
+
+    pub fn with_size(mut self, size: f32) -> Self {
+        self.size = size;
+        self
+    }
+
+    pub fn with_text(mut self, text: impl Into<String>) -> Self {
+        self.text = Some(text.into());
+        self
+    }
+
+    /// Get the effective RGBA color (custom color if specified, or default green/red based on direction).
+    pub fn effective_color(&self) -> [f32; 4] {
+        self.color.unwrap_or(match self.direction {
+            MarkerDirection::Up => DEFAULT_MARKER_UP_COLOR,
+            MarkerDirection::Down => DEFAULT_MARKER_DOWN_COLOR,
+        })
+    }
+}
+
+/// GPU instance layout for instanced marker triangles (32 bytes per marker)
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct MarkerGpuInstance {
+    pub x: f32,
+    pub y_rel: f32,
+    pub dir: f32, // 0.0 = Up, 1.0 = Down
+    pub size: f32,
+    pub color: [f32; 4],
+}

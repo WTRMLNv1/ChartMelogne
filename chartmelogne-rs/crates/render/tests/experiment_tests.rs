@@ -228,3 +228,60 @@ fn test_indicator_rendering_pipeline() {
     assert!(renderer.remove_indicator("test_sma"));
     assert_eq!(renderer.indicators().len(), 0);
 }
+
+#[test]
+fn test_marker_rendering_pipeline() {
+    let (device, queue) = match common::create_test_device() {
+        Some(dq) => dq,
+        None => {
+            eprintln!("Skipping test: no GPU adapter found");
+            return;
+        }
+    };
+
+    let mut renderer = chartmelogne_render::ChartRenderer::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+    );
+    renderer.resize(200, 100);
+
+    // Create Up and Down markers
+    let markers = vec![
+        chartmelogne_core::types::MarkerGpuInstance {
+            x: 2.0,
+            y_rel: 25.0,
+            dir: 0.0, // Up / Green
+            size: 12.0,
+            color: chartmelogne_core::types::DEFAULT_MARKER_UP_COLOR,
+        },
+        chartmelogne_core::types::MarkerGpuInstance {
+            x: 4.0,
+            y_rel: 45.0,
+            dir: 1.0, // Down / Red
+            size: 12.0,
+            color: chartmelogne_core::types::DEFAULT_MARKER_DOWN_COLOR,
+        },
+    ];
+
+    renderer.upload_markers(&markers);
+    assert_eq!(renderer.marker_count(), 2);
+
+    let view = chartmelogne_render::ViewParams {
+        from_index: 0.0,
+        px_per_bar: 20.0,
+        y_min: 0.0,
+        y_max: 60.0,
+        base_price: 0.0,
+        count: 10,
+        show_markers: true,
+        ..Default::default()
+    };
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    renderer.render(&mut encoder, &view);
+    queue.submit(Some(encoder.finish()));
+
+    renderer.clear_markers();
+    assert_eq!(renderer.marker_count(), 0);
+}

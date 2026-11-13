@@ -49,6 +49,7 @@ export component AppWindow inherits Window {
     in-out property <string> chart_type <=> chart.chart_type;
     in-out property <bool> show_volume <=> chart.show_volume;
     in-out property <bool> show_indicators <=> chart.show_indicators;
+    in-out property <bool> show_markers <=> chart.show_markers;
     in-out property <[IndicatorUi]> indicators <=> chart.indicators;
     in-out property <bool> menu_open <=> chart.menu_open;
 
@@ -137,6 +138,7 @@ export component DashboardWindow inherits Window {
     in-out property <string> chart_type <=> chart.chart_type;
     in-out property <bool> show_volume <=> chart.show_volume;
     in-out property <bool> show_indicators <=> chart.show_indicators;
+    in-out property <bool> show_markers <=> chart.show_markers;
     in-out property <[IndicatorUi]> indicators <=> chart.indicators;
 
     // Callbacks to Rust

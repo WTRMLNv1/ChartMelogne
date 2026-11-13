@@ -52,6 +52,7 @@ Slint handles the windowing, event routing, and vector overlays (crosshairs, pri
 | **`show_volume`** | `bool` | `true` | **Optional.** Toggles volume histogram and HUD volume display. |
 | **`show_indicators`**| `bool`| `false` | **Optional.** Toggles indicator overlays. |
 | `indicators` | `[IndicatorUi]` | `[]` | Dynamic indicator models (`name`, `value`, `color`) displayed in TradingView style HUD. |
+| **`show_markers`** | `bool` | `true` | **Optional.** Toggles visual trade / signal marker triangles. |
 | **`allow_zoom`** | `bool` | `true` | **Optional.** Locks or unlocks mouse wheel and pinch-to-zoom. |
 | **`show_menu_button`**| `bool`| `true` | **Optional.** Toggles the built-in 3-dot options menu (turn off if your host window has its own toolbar). |
 | **`show_hud`** | `bool` | `true` | **Optional.** Toggles top-left OHLCV badges on cursor hover. |
@@ -192,6 +193,29 @@ When `show_hud` and `show_indicators` are enabled (or indicators are present):
 
 ### 3. Warmup & Gap Handling
 Indicators often have warmup periods (e.g., the first 20 bars of an EMA 20). If `None` or `f64::NAN` is supplied for any candle index, the GPU shader (`indicator.wgsl`) automatically clips the corresponding line segment outside the viewport with zero overhead, cleanly resuming rendering as soon as valid numerical values begin.
+
+---
+
+## Signal & Trade Markers (Up & Down Triangles)
+
+`ChartMelogne` supports drawing visual markers—green upward-pointing triangles for buys/signals, and red downward-pointing triangles for sells—at specific price levels.
+
+### Host API: Pre-Mapped Index or Auto-Mapped Timestamp
+
+```rust
+use chartmelogne_core::types::ChartMarker;
+
+// 1. Pre-mapped by candle index:
+let buy = ChartMarker::up(50, 48500.0).with_text("BUY");
+let sell = ChartMarker::down(120, 52000.0).with_text("SELL");
+
+// 2. Auto-mapped by timestamp (binary-searched to nearest candle):
+let ts_marker = ChartMarker::up_at_time(1700000000.0, 48500.0);
+
+// 3. Pass markers into ChartAppConfig:
+let mut config = ChartAppConfig::default();
+config.markers = vec![buy, sell, ts_marker];
+```
 
 ---
 

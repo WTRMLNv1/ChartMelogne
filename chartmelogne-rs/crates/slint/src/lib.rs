@@ -4,7 +4,7 @@ pub use chartmelogne_core::{
     price_axis::{generate_price_ticks_into, PriceTickOptions},
     synthetic::{compute_ema, compute_sma, generate_synthetic_candles, SyntheticDataOptions},
     time_axis::{TimeAxis, TimeAxisOptions},
-    types::{CandleData, ChartType, HostIndicator, ViewportMode},
+    types::{CandleData, ChartMarker, ChartType, HostIndicator, MarkerDirection, ViewportMode},
     viewport::Viewport,
 };
 pub use chartmelogne_render::{ChartRenderer, ViewParams};
@@ -22,6 +22,8 @@ pub struct ChartAppConfig {
     pub show_volume: bool,
     pub show_indicators: bool,
     pub indicators: Vec<HostIndicator>,
+    pub show_markers: bool,
+    pub markers: Vec<ChartMarker>,
 }
 
 impl Default for ChartAppConfig {
@@ -43,6 +45,15 @@ impl Default for ChartAppConfig {
             HostIndicator::new("SMA 50", [0.612, 0.153, 0.690, 1.0], sma50),
         ];
 
+        // Host provides markers: both pre-mapped (index) and auto-mapped (timestamp)
+        let mut markers = Vec::new();
+        if candle_data.time.len() > 150 {
+            // Pre-mapped by candle index (Buy signal below low)
+            markers.push(ChartMarker::up(50, candle_data.low[50] * 0.998).with_text("BUY"));
+            // Auto-mapped from timestamp (Sell signal above high)
+            markers.push(ChartMarker::down_at_time(candle_data.time[120], candle_data.high[120] * 1.002).with_text("SELL"));
+        }
+
         Self {
             candle_data,
             utc_offset_minutes: 330,
@@ -52,6 +63,8 @@ impl Default for ChartAppConfig {
             show_volume: true,
             show_indicators: true,
             indicators,
+            show_markers: true,
+            markers,
         }
     }
 }
@@ -107,6 +120,10 @@ macro_rules! attach_chart_controller {
 
         for ind in &config.indicators {
             store.add_indicator(ind.clone());
+        }
+
+        for m in &config.markers {
+            store.add_marker(m.clone());
         }
 
         let mut viewport = Viewport::new(chartmelogne_core::viewport::ViewportOptions::default());
@@ -393,6 +410,11 @@ macro_rules! attach_chart_controller {
                             );
                         }
 
+                        let marker_instances = st.store.get_markers_gpu_instances();
+                        if !marker_instances.is_empty() {
+                            renderer.upload_markers(&marker_instances);
+                        }
+
                         let mut r_slot = r_rc.borrow_mut();
                         *r_slot = Some(renderer);
                     }
@@ -633,6 +655,7 @@ macro_rules! attach_chart_controller {
                                 show_axes,
                                 chart_type,
                                 show_indicators,
+                                show_markers: true,
                             };
 
                             (view_params, needs_resize, should_render)

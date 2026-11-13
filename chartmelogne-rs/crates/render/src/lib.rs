@@ -27,6 +27,7 @@ pub const GRID_SHADER_SRC: &str = include_str!("grid.wgsl");
 pub const VOLUME_SHADER_SRC: &str = include_str!("volume.wgsl");
 pub const LINE_SHADER_SRC: &str = include_str!("line.wgsl");
 pub const INDICATOR_SHADER_SRC: &str = include_str!("indicator.wgsl");
+pub const MARKER_SHADER_SRC: &str = include_str!("marker.wgsl");
 
 pub const HISTOGRAM_UNIT_VERTICES: [f32; 12] = [
     -0.5, 0.0,
@@ -108,6 +109,18 @@ pub struct IndicatorUniforms {
     pub color: [f32; 4],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct MarkerUniforms {
+    pub viewport_px: [f32; 2],
+    pub px_per_bar: f32,
+    pub from_index: f32,
+    pub y_scale: f32,
+    pub y_offset: f32,
+    pub dpr: f32,
+    pub _pad: f32,
+}
+
 pub struct IndicatorGpuBuffer {
     pub id: String,
     pub color: [f32; 4],
@@ -144,6 +157,7 @@ pub struct ViewParams {
     pub show_axes: bool,
     pub chart_type: chartmelogne_core::types::ChartType,
     pub show_indicators: bool,
+    pub show_markers: bool,
 }
 
 impl Default for ViewParams {
@@ -171,6 +185,7 @@ impl Default for ViewParams {
             show_axes: true,
             chart_type: chartmelogne_core::types::ChartType::Candlestick,
             show_indicators: false,
+            show_markers: true,
         }
     }
 }
@@ -213,6 +228,13 @@ pub struct ChartRenderer {
     indicator_pipeline: wgpu::RenderPipeline,
     indicator_bind_group_layout: wgpu::BindGroupLayout,
     indicators: Vec<IndicatorGpuBuffer>,
+
+    marker_pipeline: wgpu::RenderPipeline,
+    marker_uniform_buffer: wgpu::Buffer,
+    marker_bind_group: wgpu::BindGroup,
+    marker_instance_buffer: wgpu::Buffer,
+    marker_capacity: usize,
+    marker_count: usize,
 
     plot_width: u32,
     plot_height: u32,
@@ -744,7 +766,112 @@ impl ChartRenderer {
             cache: None,
         });
 
-        // 6. Texture setup
+        // 6. Marker pipeline
+        let marker_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Marker Shader"),
+            source: wgpu::ShaderSource::Wgsl(MARKER_SHADER_SRC.into()),
+        });
+
+        let marker_uniform_size = std::mem::size_of::<MarkerUniforms>() as u64;
+        let marker_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Marker Uniform Buffer"),
+            size: marker_uniform_size,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let marker_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Marker Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(marker_uniform_size),
+                    },
+                    count: None,
+                }],
+            });
+
+        let marker_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Marker Bind Group"),
+            layout: &marker_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: marker_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        let marker_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Marker Pipeline Layout"),
+                bind_group_layouts: &[Some(&marker_bind_group_layout)],
+                immediate_size: 0,
+            });
+
+        let marker_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Marker Render Pipeline"),
+            layout: Some(&marker_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &marker_shader,
+                entry_point: Some("vs_marker"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<chartmelogne_core::types::MarkerGpuInstance>()
+                        as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x4,
+                            offset: 0,
+                            shader_location: 0,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x4,
+                            offset: 16,
+                            shader_location: 1,
+                        },
+                    ],
+                })],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &marker_shader,
+                entry_point: Some("fs_marker"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let marker_capacity = 64;
+        let marker_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Marker Instance Buffer"),
+            size: (marker_capacity
+                * std::mem::size_of::<chartmelogne_core::types::MarkerGpuInstance>())
+                as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // 7. Texture setup
         let plot_width = 1;
         let plot_height = 1;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -797,6 +924,12 @@ impl ChartRenderer {
             indicator_pipeline,
             indicator_bind_group_layout,
             indicators: Vec::new(),
+            marker_pipeline,
+            marker_uniform_buffer,
+            marker_bind_group,
+            marker_instance_buffer,
+            marker_capacity,
+            marker_count: 0,
             plot_width,
             plot_height,
             texture,
@@ -1094,6 +1227,42 @@ impl ChartRenderer {
         &self.indicators
     }
 
+    /// Upload marker instances for rendering (up and down triangles).
+    pub fn upload_markers(&mut self, markers: &[chartmelogne_core::types::MarkerGpuInstance]) {
+        self.marker_count = markers.len();
+        if markers.is_empty() {
+            return;
+        }
+
+        let needed_cap = markers.len().next_power_of_two().max(64);
+        if needed_cap > self.marker_capacity {
+            let stride = std::mem::size_of::<chartmelogne_core::types::MarkerGpuInstance>();
+            self.marker_instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Marker Instance Buffer (Expanded)"),
+                size: (needed_cap * stride) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.marker_capacity = needed_cap;
+        }
+
+        self.queue.write_buffer(
+            &self.marker_instance_buffer,
+            0,
+            bytemuck::cast_slice(markers),
+        );
+    }
+
+    /// Clear all uploaded markers.
+    pub fn clear_markers(&mut self) {
+        self.marker_count = 0;
+    }
+
+    /// Number of active markers currently uploaded.
+    pub fn marker_count(&self) -> usize {
+        self.marker_count
+    }
+
     /// Render grid and candles into the target texture.
     pub fn render(&mut self, encoder: &mut wgpu::CommandEncoder, view: &ViewParams) {
         if self.plot_width == 0 || self.plot_height == 0 {
@@ -1349,6 +1518,32 @@ impl ChartRenderer {
             }
         }
 
+        // --- MARKER PASS SETUP ---
+        if view.show_markers && self.marker_count > 0 {
+            let y_span = view.y_max - view.y_min;
+            let y_scale = if y_span > 0.0 {
+                (self.plot_height as f32) / y_span
+            } else {
+                1.0
+            };
+            let y_offset = view.y_min - view.base_price;
+
+            let marker_uniforms = MarkerUniforms {
+                viewport_px: [self.plot_width as f32, self.plot_height as f32],
+                px_per_bar: view.px_per_bar,
+                from_index: view.from_index,
+                y_scale,
+                y_offset,
+                dpr: view.dpr,
+                _pad: 0.0,
+            };
+            self.queue.write_buffer(
+                &self.marker_uniform_buffer,
+                0,
+                bytemuck::bytes_of(&marker_uniforms),
+            );
+        }
+
         // --- COMBINED RENDER PASS ---
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1427,6 +1622,14 @@ impl ChartRenderer {
                         rpass.draw(0..6, first..(last_seg + 1));
                     }
                 }
+            }
+
+            // 6. Draw Markers (Up and Down Triangles)
+            if view.show_markers && self.marker_count > 0 {
+                rpass.set_pipeline(&self.marker_pipeline);
+                rpass.set_bind_group(0, &self.marker_bind_group, &[]);
+                rpass.set_vertex_buffer(0, self.marker_instance_buffer.slice(..));
+                rpass.draw(0..3, 0..self.marker_count as u32);
             }
         }
     }

@@ -357,6 +357,77 @@ For unit testing and mock data generation, `chartmelogne_core::synthetic` provid
 - `compute_sma(values: &[f64], period: usize) -> Vec<Option<f64>>`
 - `compute_ema(values: &[f64], period: usize) -> Vec<Option<f64>>`
 
+---
+
+## 8. Visual Signal & Trade Markers (`ChartMarker`)
+
+`ChartMarker` allows the host application to draw upward-pointing (buy/green) and downward-pointing (sell/red) triangle markers at specific candle bars and price levels.
+
+### Flexibility: Pre-Mapped Bar Index or Auto-Mapped Timestamp
+
+Markers can be placed using:
+1. **Direct Candle Index** (`candle_index: usize`): If the host has already mapped the signal to a bar, zero lookup overhead is incurred.
+2. **Timestamp** (`time: f64`): If the host supplies a Unix timestamp, `CandleStore` automatically binary-searches the candle timestamps and maps the marker to the closest bar.
+
+```rust
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChartMarker {
+    /// Candle index where the marker is placed (if pre-mapped by host)
+    pub candle_index: Option<usize>,
+    /// Timestamp in epoch seconds/ms (if time-based; auto-mapped to closest candle by store)
+    pub time: Option<f64>,
+    /// Price level in currency units
+    pub price: f64,
+    /// Up (triangle pointing up, green) or Down (triangle pointing down, red)
+    pub direction: MarkerDirection,
+    /// Optional RGBA color override. If None, Up defaults to green and Down defaults to red.
+    pub color: Option<[f32; 4]>,
+    /// Marker visual size in logical pixels (default: 10.0)
+    pub size: f32,
+    /// Optional textual label/tag (e.g. "BUY", "SELL", order quantity)
+    pub text: Option<String>,
+}
+
+pub enum MarkerDirection {
+    Up,   // Points up, default color: [0.149, 0.651, 0.604, 1.0] (Emerald Green #26a69a)
+    Down, // Points down, default color: [0.937, 0.325, 0.314, 1.0] (Coral Red #ef5350)
+}
+```
+
+### Constructors & Helpers
+
+```rust
+// 1. Pre-mapped by candle index
+let buy_marker = ChartMarker::up(50, 48200.0).with_text("BUY");
+let sell_marker = ChartMarker::down(120, 52100.0).with_text("SELL");
+
+// 2. Auto-mapped by timestamp
+let ts_buy = ChartMarker::up_at_time(1700000000.0, 48200.0);
+let ts_sell = ChartMarker::down_at_time(1700050000.0, 52100.0);
+
+// 3. Custom color and size
+let custom_marker = ChartMarker::up(80, 50000.0)
+    .with_color([1.0, 0.84, 0.0, 1.0]) // Gold
+    .with_size(14.0);
+```
+
+### `CandleStore` Marker Methods
+
+```rust
+// Add markers to store
+store.add_marker(buy_marker);
+store.set_markers(vec![buy_marker, sell_marker]);
+
+// Binary search closest bar for any timestamp
+let nearest_bar_idx = store.find_bar_index_by_time(1700000000.0);
+
+// Resolve bar index for a marker (direct index or binary search from time)
+let bar_idx = store.resolve_marker_bar_index(&marker);
+
+// Convert to packed GPU instances (32 bytes per marker)
+let gpu_instances: Vec<MarkerGpuInstance> = store.get_markers_gpu_instances();
+```
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ViewportMode {

@@ -1,4 +1,7 @@
-use crate::types::{Bar, CandleData, HostIndicator, ValidationError};
+use crate::types::{
+    Bar, CandleData, ChartMarker, HostIndicator, MarkerDirection, MarkerGpuInstance,
+    ValidationError,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MemoryDetails {
@@ -91,6 +94,7 @@ pub struct CandleStore {
 
     pub scratch_instance: [f32; 4],
     pub indicators: Vec<HostIndicator>,
+    pub markers: Vec<ChartMarker>,
 }
 
 impl CandleStore {
@@ -123,6 +127,7 @@ impl CandleStore {
 
             scratch_instance: [0.0; 4],
             indicators: Vec::new(),
+            markers: Vec::new(),
         }
     }
 
@@ -197,6 +202,88 @@ impl CandleStore {
             }
         }
         out
+    }
+
+    /// Add a signal or event marker (e.g. Up/Buy or Down/Sell triangle) to the store
+    pub fn add_marker(&mut self, marker: ChartMarker) {
+        self.markers.push(marker);
+    }
+
+    /// Replace all markers in the store
+    pub fn set_markers(&mut self, markers: Vec<ChartMarker>) {
+        self.markers = markers;
+    }
+
+    /// Remove all markers from the store
+    pub fn clear_markers(&mut self) {
+        self.markers.clear();
+    }
+
+    /// Read-only access to all registered markers
+    pub fn markers(&self) -> &[ChartMarker] {
+        &self.markers
+    }
+
+    /// Binary searches the candle timestamps to find the closest candle index for a given timestamp.
+    /// Returns None if the store is empty.
+    pub fn find_bar_index_by_time(&self, timestamp: f64) -> Option<usize> {
+        if self.count == 0 {
+            return None;
+        }
+        let times = &self.time[..self.count];
+        match times.binary_search_by(|&t| t.total_cmp(&timestamp)) {
+            Ok(exact) => Some(exact),
+            Err(idx) => {
+                if idx == 0 {
+                    Some(0)
+                } else if idx >= self.count {
+                    Some(self.count - 1)
+                } else {
+                    let diff_left = (timestamp - times[idx - 1]).abs();
+                    let diff_right = (times[idx] - timestamp).abs();
+                    if diff_left <= diff_right {
+                        Some(idx - 1)
+                    } else {
+                        Some(idx)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Resolves the bar index for a marker.
+    /// If pre-mapped (`marker.candle_index` is Some), returns it directly.
+    /// If `marker.time` is specified, binary-searches the candle timestamps to find the closest candle.
+    pub fn resolve_marker_bar_index(&self, marker: &ChartMarker) -> usize {
+        if let Some(idx) = marker.candle_index {
+            idx
+        } else if let Some(t) = marker.time {
+            self.find_bar_index_by_time(t).unwrap_or(0)
+        } else {
+            0
+        }
+    }
+
+    /// Convert markers into GPU instance layout (relative to base_price).
+    /// Pre-mapped markers use candle_index directly; time-based markers are auto-mapped.
+    pub fn get_markers_gpu_instances(&self) -> Vec<MarkerGpuInstance> {
+        let base = self.base_price;
+        self.markers
+            .iter()
+            .map(|m| {
+                let bar_idx = self.resolve_marker_bar_index(m);
+                MarkerGpuInstance {
+                    x: bar_idx as f32,
+                    y_rel: (m.price - base) as f32,
+                    dir: match m.direction {
+                        MarkerDirection::Up => 0.0,
+                        MarkerDirection::Down => 1.0,
+                    },
+                    size: m.size,
+                    color: m.effective_color(),
+                }
+            })
+            .collect()
     }
 
     pub fn get_bar(&self, i: usize) -> Bar {

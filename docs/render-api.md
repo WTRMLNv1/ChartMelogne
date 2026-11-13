@@ -149,6 +149,14 @@ pub fn clear_indicators(&mut self)
 ```
 Removes a specific indicator or all indicators from GPU memory.
 
+##### `upload_markers` & `clear_markers`
+```rust
+pub fn upload_markers(&mut self, markers: &[MarkerGpuInstance])
+pub fn clear_markers(&mut self)
+pub fn marker_count(&self) -> usize
+```
+Uploads marker instances (up and down triangles) directly to GPU instance buffer. Render pass 6 draws all markers in a single instanced triangle draw call (`draw(0..3, 0..marker_count)`).
+
 #### Frame Execution
 
 ##### `render`
@@ -268,6 +276,36 @@ pub struct IndicatorUniforms {
     pub dpr: f32,
     pub line_width: f32,
     pub color: [f32; 4],
+}
+```
+
+### `MarkerUniforms` (32 Bytes)
+
+```rust
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct MarkerUniforms {
+    pub viewport_px: [f32; 2],
+    pub px_per_bar: f32,
+    pub from_index: f32,
+    pub y_scale: f32,
+    pub y_offset: f32,
+    pub dpr: f32,
+    pub _pad: f32,
+}
+```
+
+### `MarkerGpuInstance` (32 Bytes per Marker)
+
+```rust
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct MarkerGpuInstance {
+    pub x: f32,          // Candle index (float)
+    pub y_rel: f32,      // Price - base_price
+    pub dir: f32,        // 0.0 for Up (pointing up / green), 1.0 for Down (pointing down / red)
+    pub size: f32,       // Marker size in logical pixels
+    pub color: [f32; 4], // RGBA color
 }
 ```
 
