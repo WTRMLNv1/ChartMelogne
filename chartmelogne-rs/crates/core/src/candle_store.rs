@@ -237,46 +237,15 @@ impl CandleStore {
         let base = if n > 0 { data.close[0] } else { 0.0 };
         self.base_price = base;
 
-        let mut off = 0;
-        let mut v_off = 0;
-        for i in 0..n {
-            let o = data.open[i];
-            let c = data.close[i];
-            self.ohlc[off] = (o - base) as f32;
-            self.ohlc[off + 1] = (data.high[i] - base) as f32;
-            self.ohlc[off + 2] = (data.low[i] - base) as f32;
-            self.ohlc[off + 3] = (c - base) as f32;
-            off += 4;
-
-            self.volume_instances[v_off] = data.volume[i] as f32;
-            self.volume_instances[v_off + 1] = if c >= o { 1.0 } else { 0.0 };
-            v_off += 2;
-        }
-
-        // Build day_starts
+        // Prepare day_starts
         let utc_offset_ms = (self.utc_offset_minutes as f64) * 60_000.0;
+        const INV_DAY_MS: f64 = 1.0 / 86_400_000.0;
         let day_cap = 128.max((n + 99) / 100);
         if self.day_starts.len() < day_cap {
             self.day_starts.resize(day_cap, 0);
         }
 
-        let mut days = 0;
-        let mut prev_day = i64::MIN;
-        for i in 0..n {
-            let local_day = ((self.time[i] + utc_offset_ms) / 86_400_000.0).floor() as i64;
-            if local_day != prev_day {
-                if days >= self.day_starts.len() {
-                    self.day_starts.resize(self.day_starts.len() * 2, 0);
-                }
-                self.day_starts[days] = i as u32;
-                days += 1;
-                prev_day = local_day;
-            }
-        }
-        self.day_count = days;
-        self.last_local_day = prev_day;
-
-        // Build block min/max summaries (block size 256)
+        // Prepare block min/max summaries (block size 256)
         let num_blocks = (n + 255) / 256;
         if self.block_min.len() < num_blocks {
             self.block_min.resize(num_blocks, 0.0);
@@ -285,50 +254,82 @@ impl CandleStore {
         }
         self.block_count = num_blocks;
 
+        let mut days = 0;
+        let mut prev_day = i64::MIN;
+        let mut off = 0;
+        let mut v_off = 0;
+
+        // Fused cache-resident single pass over 256-bar blocks:
+        // Packs OHLC & volume instances, tracks day boundaries, and accumulates block summaries
         for b in 0..num_blocks {
             let b_start = b << 8;
             let b_end = n.min(b_start + 256);
-            let mut b_min = f64::INFINITY;
-            let mut b_max = f64::NEG_INFINITY;
+            let mut b_min_rel = f32::INFINITY;
+            let mut b_max_rel = f32::NEG_INFINITY;
             let mut b_max_vol = 0u32;
+
             for i in b_start..b_end {
-                if (self.flags[i] & 1) != 0 {
-                    continue;
+                let o = data.open[i];
+                let h = data.high[i];
+                let l = data.low[i];
+                let c = data.close[i];
+                let v = data.volume[i];
+
+                let rel_o = (o - base) as f32;
+                let rel_h = (h - base) as f32;
+                let rel_l = (l - base) as f32;
+                let rel_c = (c - base) as f32;
+
+                self.ohlc[off] = rel_o;
+                self.ohlc[off + 1] = rel_h;
+                self.ohlc[off + 2] = rel_l;
+                self.ohlc[off + 3] = rel_c;
+                off += 4;
+
+                self.volume_instances[v_off] = v as f32;
+                self.volume_instances[v_off + 1] = if c >= o { 1.0 } else { 0.0 };
+                v_off += 2;
+
+                // Day boundary detection with reciprocal multiplication
+                let local_day = ((self.time[i] + utc_offset_ms) * INV_DAY_MS).floor() as i64;
+                if local_day != prev_day {
+                    if days >= self.day_starts.len() {
+                        self.day_starts.resize(self.day_starts.len() * 2, 0);
+                    }
+                    self.day_starts[days] = i as u32;
+                    days += 1;
+                    prev_day = local_day;
                 }
-                let i_off = i * 4;
-                let l = base + self.ohlc[i_off + 2] as f64;
-                let h = base + self.ohlc[i_off + 1] as f64;
-                let v = self.volume[i];
-                if l < b_min {
-                    b_min = l;
-                }
-                if h > b_max {
-                    b_max = h;
-                }
-                if v > b_max_vol {
-                    b_max_vol = v;
+
+                // Block min/max summary accumulation in relative space (exact bit parity with ohlc)
+                if (self.flags[i] & 1) == 0 {
+                    if rel_l < b_min_rel {
+                        b_min_rel = rel_l;
+                    }
+                    if rel_h > b_max_rel {
+                        b_max_rel = rel_h;
+                    }
+                    if v > b_max_vol {
+                        b_max_vol = v;
+                    }
                 }
             }
-            self.block_min[b] = if b_min.is_infinite() {
-                if b_start < n {
-                    base + self.ohlc[b_start * 4 + 2] as f64
-                } else {
-                    0.0
-                }
+
+            self.block_min[b] = if b_min_rel.is_infinite() {
+                if b_start < n { base + self.ohlc[b_start * 4 + 2] as f64 } else { 0.0 }
             } else {
-                b_min
+                base + b_min_rel as f64
             };
-            self.block_max[b] = if b_max.is_infinite() {
-                if b_start < n {
-                    base + self.ohlc[b_start * 4 + 1] as f64
-                } else {
-                    1.0
-                }
+            self.block_max[b] = if b_max_rel.is_infinite() {
+                if b_start < n { base + self.ohlc[b_start * 4 + 1] as f64 } else { 1.0 }
             } else {
-                b_max
+                base + b_max_rel as f64
             };
             self.block_max_vol[b] = b_max_vol;
         }
+
+        self.day_count = days;
+        self.last_local_day = prev_day;
 
         Ok(())
     }
