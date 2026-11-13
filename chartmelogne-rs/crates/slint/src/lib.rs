@@ -4,7 +4,7 @@ use std::rc::Rc;
 use chartmelogne_core::{
     candle_store::CandleStore,
     format::{format_volume, to_fixed},
-    price_axis::{generate_price_ticks, PriceTickOptions},
+    price_axis::{generate_price_ticks_into, PriceTickOptions},
     synthetic::{generate_synthetic_candles, SyntheticDataOptions},
     time_axis::{TimeAxis, TimeAxisOptions},
     types::{CandleData, ChartType, ViewportMode},
@@ -62,6 +62,7 @@ struct ChartAppState {
     chart_type: ChartType,
     show_volume: bool,
     show_indicators: bool,
+    chart_dirty: bool,
 }
 
 pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError> {
@@ -108,6 +109,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
         chart_type: config.chart_type,
         show_volume: config.show_volume,
         show_indicators: config.show_indicators,
+        chart_dirty: true,
     }));
 
     let renderer_slot: Rc<RefCell<Option<ChartRenderer>>> = Rc::new(RefCell::new(None));
@@ -149,6 +151,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                     if st.viewport.y_mode == ViewportMode::Manual {
                         st.viewport.pan_y_by_pixels((dy as f64) * (dpr as f64));
                     }
+                    st.chart_dirty = true;
                     ui.window().request_redraw();
                 }
             }
@@ -179,6 +182,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                 let zoom_factor = (-clamped_delta * 0.0018).exp();
                 let cursor_px = (cursor_x as f64) * (dpr as f64);
                 st.viewport.zoom_at(cursor_px, zoom_factor);
+                st.chart_dirty = true;
                 ui.window().request_redraw();
             }
         });
@@ -202,6 +206,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                 let zoom_factor = (-clamped_delta * 0.0018).exp();
                 let cursor_py = (cursor_y as f64) * (dpr as f64);
                 st.viewport.zoom_y_at(cursor_py, zoom_factor);
+                st.chart_dirty = true;
                 ui.window().request_redraw();
             }
         });
@@ -223,6 +228,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                     let (min_p, max_p) = st.store.get_visible_min_max(st.viewport.from_index, st.viewport.from_index + st.viewport.bars_visible);
                     st.viewport.update_auto_y(min_p, max_p, true);
                 }
+                st.chart_dirty = true;
                 ui.window().request_redraw();
             }
         });
@@ -248,6 +254,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
         ui.on_toggle_show_axes(move |val| {
             let mut st = st_rc.borrow_mut();
             st.show_axes = val;
+            st.chart_dirty = true;
             if let Some(ui) = ui_handle.upgrade() {
                 ui.window().request_redraw();
             }
@@ -263,6 +270,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
             use std::str::FromStr;
             if let Ok(ct) = chartmelogne_core::types::ChartType::from_str(val.as_str()) {
                 st.chart_type = ct;
+                st.chart_dirty = true;
             }
             if let Some(ui) = ui_handle.upgrade() {
                 ui.window().request_redraw();
@@ -277,6 +285,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
         ui.on_toggle_show_volume(move |val| {
             let mut st = st_rc.borrow_mut();
             st.show_volume = val;
+            st.chart_dirty = true;
             if let Some(ui) = ui_handle.upgrade() {
                 ui.window().request_redraw();
             }
@@ -290,6 +299,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
         ui.on_toggle_show_indicators(move |val| {
             let mut st = st_rc.borrow_mut();
             st.show_indicators = val;
+            st.chart_dirty = true;
             if let Some(ui) = ui_handle.upgrade() {
                 ui.window().request_redraw();
             }
@@ -357,8 +367,16 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                     let phys_w = ((logical_w as f64) * (dpr as f64)).round() as u32;
                     let phys_h = ((logical_h as f64) * (dpr as f64)).round() as u32;
 
-                    let (view_params, needs_resize) = {
+                    let (view_params, needs_resize, should_render) = {
                         let mut st = st_rc.borrow_mut();
+                        let (cur_w, cur_h) = {
+                            let r_slot = r_rc.borrow();
+                            r_slot.as_ref().map(|r| (r.plot_width(), r.plot_height())).unwrap_or((0, 0))
+                        };
+                        let needs_resize = cur_w != phys_w || cur_h != phys_h;
+                        let should_render = st.chart_dirty || needs_resize;
+                        st.chart_dirty = false;
+
                         let ChartAppState {
                             ref mut store,
                             ref mut viewport,
@@ -374,10 +392,12 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                             ..
                         } = *st;
 
-                        // Update Viewport size & Auto-Y
-                        viewport.set_size(phys_w as f64, phys_h as f64, dpr as f64);
-                        let (min_p, max_p) = store.get_visible_min_max(viewport.from_index, viewport.from_index + viewport.bars_visible);
-                        viewport.update_auto_y(min_p, max_p, true);
+                        // Only recompute viewport Auto-Y and axis ticks when chart is dirty or resized
+                        if should_render {
+                            viewport.set_size(phys_w as f64, phys_h as f64, dpr as f64);
+                            let (min_p, max_p) = store.get_visible_min_max(viewport.from_index, viewport.from_index + viewport.bars_visible);
+                            viewport.update_auto_y(min_p, max_p, true);
+                        }
 
                         let y_min = viewport.y_min;
                         let y_max = viewport.y_max;
@@ -387,15 +407,14 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                         let from_index = viewport.from_index;
                         let bars_visible = viewport.bars_visible;
 
-                        // 1 & 2. Generate Ticks and Grid (if show_axes)
-                        let mut ui_price_ticks = Vec::new();
                         let mut grid_y = Vec::new();
-                        let mut ui_time_ticks = Vec::new();
                         let mut grid_x = Vec::new();
 
-                        if show_axes {
-                            let price_ticks = generate_price_ticks(y_min, y_max, phys_h as f64, &PriceTickOptions::default());
-                            ui_price_ticks.reserve(price_ticks.len());
+                        // 1 & 2. Generate Ticks and Grid (if show_axes and should_render)
+                        if show_axes && should_render {
+                            let mut price_ticks = Vec::new();
+                            generate_price_ticks_into(y_min, y_max, phys_h as f64, &PriceTickOptions::default(), &mut price_ticks);
+                            let mut ui_price_ticks = Vec::with_capacity(price_ticks.len());
                             grid_y.reserve(price_ticks.len());
 
                             for tick in &price_ticks {
@@ -419,7 +438,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                                 Some(&store.day_starts),
                                 Some(store.day_count),
                             );
-                            ui_time_ticks.reserve(time_ticks.len());
+                            let mut ui_time_ticks = Vec::with_capacity(time_ticks.len());
                             grid_x.reserve(time_ticks.len());
 
                             for tick in time_ticks {
@@ -433,13 +452,13 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                                     });
                                 }
                             }
+
+                            ui.set_price_ticks(ModelRc::new(VecModel::from(ui_price_ticks)));
+                            ui.set_time_ticks(ModelRc::new(VecModel::from(ui_time_ticks)));
                         }
 
-                        ui.set_price_ticks(ModelRc::new(VecModel::from(ui_price_ticks)));
-                        ui.set_time_ticks(ModelRc::new(VecModel::from(ui_time_ticks)));
-
                         // 3. Last Price line and badge
-                        if show_axes && store.count() > 0 {
+                        if show_axes && should_render && store.count() > 0 {
                             let last_idx = store.count() - 1;
                             let last_close = store.get_close(last_idx);
                             let last_open = store.get_open(last_idx);
@@ -456,11 +475,11 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                             } else {
                                 slint::Color::from_argb_u8(255, 242, 54, 69) // #f23645
                             });
-                        } else {
+                        } else if !show_axes {
                             ui.set_last_price_visible(false);
                         }
 
-                        // 4. Crosshair and HUD
+                        // 4. Crosshair and HUD (always responsive to mouse hover)
                         if crosshair_active && logical_w > 0.0 && logical_h > 0.0 {
                             let cx_phys = (crosshair_screen_x as f64) * (dpr as f64);
                             let cy_phys = (crosshair_screen_y as f64) * (dpr as f64);
@@ -508,7 +527,7 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                             }
                         }
 
-                        let max_vol = if show_volume {
+                        let max_vol = if show_volume && should_render {
                             store.get_visible_max_volume(from_index, from_index + bars_visible) as f32
                         } else {
                             1.0
@@ -544,15 +563,13 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                             show_indicators,
                         };
 
-                        (view_params, (phys_w, phys_h))
+                        (view_params, needs_resize, should_render)
                     };
 
                     let mut r_slot = r_rc.borrow_mut();
                     let Some(ref mut renderer) = *r_slot else { return };
 
-                    let (phys_w, phys_h) = needs_resize;
-                    let needs_rebind = renderer.plot_width() != phys_w || renderer.plot_height() != phys_h;
-                    if needs_rebind {
+                    if needs_resize {
                         renderer.resize(phys_w, phys_h);
                         match slint::Image::try_from(renderer.texture().clone()) {
                             Ok(img) => ui.set_chart_texture(img),
@@ -560,11 +577,13 @@ pub fn run_chart_app(config: ChartAppConfig) -> Result<(), slint::PlatformError>
                         }
                     }
 
-                    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("Frame Command Encoder"),
-                    });
-                    renderer.render(&mut encoder, &view_params);
-                    queue.submit(Some(encoder.finish()));
+                    if should_render {
+                        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("Frame Command Encoder"),
+                        });
+                        renderer.render(&mut encoder, &view_params);
+                        queue.submit(Some(encoder.finish()));
+                    }
                 }
 
                 slint::RenderingState::AfterRendering => {}
