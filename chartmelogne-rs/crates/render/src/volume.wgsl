@@ -4,8 +4,8 @@ struct VolumeUniforms {
     from_index: f32,
     max_volume: f32,
     height_ratio: f32,
-    dpr: f32,
-    _pad: f32,
+    bar_width: f32,
+    max_h: f32,
     up_color: vec4<f32>,
     down_color: vec4<f32>,
 };
@@ -39,16 +39,10 @@ fn vs_volume(
     var center_x = (bar_index + 0.5 - u.from_index) * u.px_per_bar;
     center_x = floor(center_x) + 0.5;
 
-    var bar_width = clamp(u.px_per_bar * 0.7, 1.0, 30.0 * u.dpr);
-    if (u.px_per_bar < 3.0 * u.dpr) {
-        bar_width = 1.0;
-    }
+    let cur_x = center_x + in.position.x * u.bar_width;
 
-    let cur_x = center_x + in.position.x * bar_width;
-
-    let max_h = u.viewport_px.y * u.height_ratio;
     let norm_vol = clamp(instance.data.x / max(u.max_volume, 1.0), 0.0, 1.0);
-    let bar_height = max(1.0, norm_vol * max_h);
+    let bar_height = max(1.0, norm_vol * u.max_h);
 
     let cur_y = in.position.y * bar_height;
 

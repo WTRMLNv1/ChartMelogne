@@ -8,6 +8,9 @@ struct Uniforms {
     dpr: f32,
     up_color: vec4<f32>,
     down_color: vec4<f32>,
+    body_width: f32,
+    wick_width: f32,
+    _pad: vec2<f32>,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -45,15 +48,9 @@ fn vs_main(
     var center_x = (bar_index + 0.5 * u.bars_per_node - u.from_index) * u.px_per_bar;
     center_x = floor(center_x) + 0.5;
 
-    // Body and wick dimensions in device pixels
-    var body_width = clamp(u.px_per_bar * 0.7, 1.0, 30.0 * u.dpr);
-    var wick_width = max(1.0, floor(max(1.0, 0.1 * body_width) + 0.5));
-
-    // Below 3 px per bar, drop bodies and only draw 1px wicks
-    if (u.px_per_bar < 3.0 * u.dpr) {
-        body_width = 0.0;
-        wick_width = 1.0;
-    }
+    // Body and wick dimensions precalculated in uniforms
+    let body_width = u.body_width;
+    let wick_width = u.wick_width;
 
     let o = instance.ohlc.x;
     let h = instance.ohlc.y;

@@ -49,6 +49,9 @@ pub struct CandleUniforms {
     pub dpr: f32,              // offset 28
     pub up_color: [f32; 4],    // offset 32
     pub down_color: [f32; 4],  // offset 48
+    pub body_width: f32,       // offset 64
+    pub wick_width: f32,       // offset 68
+    pub _pad: [f32; 2],        // offset 72
 }
 
 #[repr(C)]
@@ -67,8 +70,8 @@ pub struct VolumeUniforms {
     pub from_index: f32,
     pub max_volume: f32,
     pub height_ratio: f32,
-    pub dpr: f32,
-    pub _pad: f32,
+    pub bar_width: f32,
+    pub max_h: f32,
     pub up_color: [f32; 4],
     pub down_color: [f32; 4],
 }
@@ -976,14 +979,22 @@ impl ChartRenderer {
             && (first as usize) < self.volume_count;
 
         if should_draw_volume {
+            let bar_width = if view.px_per_bar < 3.0 * view.dpr {
+                1.0
+            } else {
+                (view.px_per_bar * 0.7).clamp(1.0, 30.0 * view.dpr)
+            };
+            let height_ratio = view.volume_height_ratio.clamp(0.01, 1.0);
+            let max_h = (self.plot_height as f32) * height_ratio;
+
             let vol_uniforms = VolumeUniforms {
                 viewport_px: [self.plot_width as f32, self.plot_height as f32],
                 px_per_bar: view.px_per_bar,
                 from_index: view.from_index,
                 max_volume: view.volume_max.max(1.0),
-                height_ratio: view.volume_height_ratio.clamp(0.01, 1.0),
-                dpr: view.dpr,
-                _pad: 0.0,
+                height_ratio,
+                bar_width,
+                max_h,
                 up_color: view.volume_up_color,
                 down_color: view.volume_down_color,
             };
@@ -1001,6 +1012,14 @@ impl ChartRenderer {
             let y_offset = view.y_min - view.base_price;
             let bars_per_node = 1.0;
 
+            let (body_width, wick_width) = if view.px_per_bar < 3.0 * view.dpr {
+                (0.0, 1.0)
+            } else {
+                let bw = (view.px_per_bar * 0.7).clamp(1.0, 30.0 * view.dpr);
+                let ww = 1.0f32.max((1.0f32.max(0.1 * bw) + 0.5).floor());
+                (bw, ww)
+            };
+
             let uniforms = CandleUniforms {
                 viewport_px: [self.plot_width as f32, self.plot_height as f32],
                 px_per_bar: view.px_per_bar,
@@ -1011,6 +1030,9 @@ impl ChartRenderer {
                 dpr: view.dpr,
                 up_color: view.up_color,
                 down_color: view.down_color,
+                body_width,
+                wick_width,
+                _pad: [0.0, 0.0],
             };
 
             self.queue
