@@ -86,3 +86,466 @@ export component AppWindow inherits Window {
         toggle_show_indicators(val) => { root.toggle_show_indicators(val); }
     }
 }
+
+
+export component DashboardWindow inherits Window {
+    title: "ChartMelogne - Trading Dashboard (Embedded ChartWidget)";
+    min-width: 1100px;
+    min-height: 650px;
+    default-font-family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+    background: #0d1117;
+
+    // Viewport image & dimensions (aliased to inner ChartWidget)
+    in-out property <image> chart_texture <=> chart.chart_texture;
+    in-out property <length> plot_width <=> chart.plot_width;
+    in-out property <length> plot_height <=> chart.plot_height;
+
+    // Axis Ticks
+    in-out property <[PriceTickUi]> price_ticks <=> chart.price_ticks;
+    in-out property <[TimeTickUi]> time_ticks <=> chart.time_ticks;
+
+    // Crosshair State
+    in-out property <bool> crosshair_active <=> chart.crosshair_active;
+    in-out property <length> crosshair_x <=> chart.crosshair_x;
+    in-out property <length> crosshair_y <=> chart.crosshair_y;
+    in-out property <length> crosshair_snapped_x <=> chart.crosshair_snapped_x;
+    in-out property <string> crosshair_price <=> chart.crosshair_price;
+    in-out property <string> crosshair_time <=> chart.crosshair_time;
+
+    // Last Price
+    in-out property <bool> last_price_visible <=> chart.last_price_visible;
+    in-out property <length> last_price_y <=> chart.last_price_y;
+    in-out property <string> last_price_str <=> chart.last_price_str;
+    in-out property <color> last_price_color <=> chart.last_price_color;
+
+    // Auto / Manual Y Mode
+    in-out property <bool> auto_y_mode <=> chart.auto_y_mode;
+
+    // Top-Left HUD (OHLCV)
+    in-out property <bool> hud_active <=> chart.hud_active;
+    in-out property <string> hud_open <=> chart.hud_open;
+    in-out property <string> hud_high <=> chart.hud_high;
+    in-out property <string> hud_low <=> chart.hud_low;
+    in-out property <string> hud_close <=> chart.hud_close;
+    in-out property <string> hud_volume <=> chart.hud_volume;
+    in-out property <color> hud_ohlc_color <=> chart.hud_ohlc_color;
+
+    // Chart Flags & Optional Features
+    in-out property <bool> allow_zoom <=> chart.allow_zoom;
+    in-out property <bool> show_axes <=> chart.show_axes;
+    in-out property <string> chart_type <=> chart.chart_type;
+    in-out property <bool> show_volume <=> chart.show_volume;
+    in-out property <bool> show_indicators <=> chart.show_indicators;
+
+    // Callbacks to Rust
+    callback pointer_moved(length, length);
+    callback pointer_left();
+    callback drag_started(length, length);
+    callback drag_ended();
+    callback dragged(length, length);
+    callback scrolled(length, length); // delta_y, cursor_x
+    callback price_axis_scrolled(length, length); // delta_y, cursor_y
+    callback toggle_auto_y();
+    callback toggle_allow_zoom(bool);
+    callback toggle_show_axes(bool);
+    callback toggle_chart_type(string);
+    callback toggle_show_volume(bool);
+    callback toggle_show_indicators(bool);
+
+    VerticalLayout {
+        padding: 0px;
+        spacing: 0px;
+
+        // TOP NAVIGATION / APP BAR
+        Rectangle {
+            height: 44px;
+            background: #161b22;
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: #30363d;
+            }
+
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 16px;
+                alignment: space-between;
+
+                // Left: Symbol & Price summary
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+
+                    Text {
+                        text: "BTC/USDT";
+                        color: #ffffff;
+                        font-size: 14px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.last_price_str != "" ? root.last_price_str : "94,250.00";
+                        color: root.last_price_color;
+                        font-size: 13px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                    Rectangle {
+                        width: 55px;
+                        height: 20px;
+                        border-radius: 3px;
+                        background: #089981.with-alpha(0.2);
+                        Text {
+                            text: "+3.45%";
+                            color: #089981;
+                            font-size: 10px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Center/Right: Feature toggles & Chart Type
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    // Axes Toggle Button
+                    Rectangle {
+                        width: 70px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: root.show_axes ? #238636 : #21262d;
+                        border-width: 1px;
+                        border-color: root.show_axes ? #2ea043 : #30363d;
+                        Text {
+                            text: root.show_axes ? "Axes ON" : "Axes OFF";
+                            color: #ffffff;
+                            font-size: 11px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.show_axes = !root.show_axes;
+                                root.toggle_show_axes(root.show_axes);
+                            }
+                        }
+                    }
+
+                    // Volume Toggle Button
+                    Rectangle {
+                        width: 70px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: root.show_volume ? #1f6feb : #21262d;
+                        border-width: 1px;
+                        border-color: root.show_volume ? #388bfd : #30363d;
+                        Text {
+                            text: root.show_volume ? "Vol ON" : "Vol OFF";
+                            color: #ffffff;
+                            font-size: 11px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.show_volume = !root.show_volume;
+                                root.toggle_show_volume(root.show_volume);
+                            }
+                        }
+                    }
+
+                    // Zoom Lock Button
+                    Rectangle {
+                        width: 75px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: root.allow_zoom ? #21262d : #da3633;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text {
+                            text: root.allow_zoom ? "Zoom ON" : "Zoom Locked";
+                            color: #ffffff;
+                            font-size: 11px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.allow_zoom = !root.allow_zoom;
+                                root.toggle_allow_zoom(root.allow_zoom);
+                            }
+                        }
+                    }
+
+                    // Chart Type: Candlestick
+                    Rectangle {
+                        width: 55px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: root.chart_type == "candlestick" ? #2962ff : #21262d;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text {
+                            text: "Candles";
+                            color: #ffffff;
+                            font-size: 11px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.chart_type = "candlestick";
+                                root.toggle_chart_type("candlestick");
+                            }
+                        }
+                    }
+
+                    // Chart Type: Line
+                    Rectangle {
+                        width: 45px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: root.chart_type == "line" ? #2962ff : #21262d;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text {
+                            text: "Line";
+                            color: #ffffff;
+                            font-size: 11px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.chart_type = "line";
+                                root.toggle_chart_type("line");
+                            }
+                        }
+                    }
+
+                    // Chart Type: Area
+                    Rectangle {
+                        width: 45px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: root.chart_type == "area" ? #2962ff : #21262d;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text {
+                            text: "Area";
+                            color: #ffffff;
+                            font-size: 11px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.chart_type = "area";
+                                root.toggle_chart_type("area");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // MAIN WORKSPACE LAYOUT (3 Columns: Watchlist | ChartWidget | OrderBook)
+        HorizontalLayout {
+            spacing: 0px;
+            vertical-stretch: 1;
+
+            // 1. LEFT SIDEBAR: Watchlist Panel (200px)
+            Rectangle {
+                width: 200px;
+                background: #161b22;
+
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    background: #30363d;
+                }
+
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 8px;
+
+                    Text {
+                        text: "WATCHLIST";
+                        color: #787b86;
+                        font-size: 11px;
+                        font-weight: 700;
+                    }
+
+                    // Item 1 (Selected)
+                    Rectangle {
+                        height: 38px;
+                        border-radius: 4px;
+                        background: #21262d;
+
+                        Rectangle {
+                            x: 0px;
+                            width: 3px;
+                            background: #2962ff;
+                        }
+
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            alignment: space-between;
+                            Text { text: "BTC/USDT"; color: #ffffff; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+                            Text { text: "+3.45%"; color: #089981; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                        }
+                    }
+
+                    // Item 2
+                    Rectangle {
+                        height: 38px;
+                        border-radius: 4px;
+                        background: transparent;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            alignment: space-between;
+                            Text { text: "ETH/USDT"; color: #c9d1d9; font-size: 12px; font-weight: 500; vertical-alignment: center; }
+                            Text { text: "+1.80%"; color: #089981; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                        }
+                    }
+
+                    // Item 3
+                    Rectangle {
+                        height: 38px;
+                        border-radius: 4px;
+                        background: transparent;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            alignment: space-between;
+                            Text { text: "SOL/USDT"; color: #c9d1d9; font-size: 12px; font-weight: 500; vertical-alignment: center; }
+                            Text { text: "+5.20%"; color: #089981; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                        }
+                    }
+
+                    // Item 4
+                    Rectangle {
+                        height: 38px;
+                        border-radius: 4px;
+                        background: transparent;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            alignment: space-between;
+                            Text { text: "NVDA"; color: #c9d1d9; font-size: 12px; font-weight: 500; vertical-alignment: center; }
+                            Text { text: "-0.65%"; color: #f23645; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                        }
+                    }
+                }
+            }
+
+            // 2. CENTER: Embedded ChartWidget (stretches to fill)
+            chart := ChartWidget {
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+                show_menu_button: false; // Uses top dashboard bar instead of 3-dot menu
+
+                pointer_moved(x, y) => { root.pointer_moved(x, y); }
+                pointer_left() => { root.pointer_left(); }
+                drag_started(x, y) => { root.drag_started(x, y); }
+                drag_ended() => { root.drag_ended(); }
+                dragged(x, y) => { root.dragged(x, y); }
+                scrolled(dy, cx) => { root.scrolled(dy, cx); }
+                price_axis_scrolled(dy, cy) => { root.price_axis_scrolled(dy, cy); }
+                toggle_auto_y() => { root.toggle_auto_y(); }
+                toggle_allow_zoom(val) => { root.toggle_allow_zoom(val); }
+                toggle_show_axes(val) => { root.toggle_show_axes(val); }
+                toggle_chart_type(val) => { root.toggle_chart_type(val); }
+                toggle_show_volume(val) => { root.toggle_show_volume(val); }
+                toggle_show_indicators(val) => { root.toggle_show_indicators(val); }
+            }
+
+            // 3. RIGHT SIDEBAR: Order Book Panel (220px)
+            Rectangle {
+                width: 220px;
+                background: #161b22;
+
+                Rectangle {
+                    x: 0px;
+                    width: 1px;
+                    background: #30363d;
+                }
+
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 6px;
+
+                    Text {
+                        text: "ORDER BOOK";
+                        color: #787b86;
+                        font-size: 11px;
+                        font-weight: 700;
+                    }
+
+                    // Asks (Red)
+                    HorizontalLayout { alignment: space-between; Text { text: "94,270.50"; color: #f23645; font-size: 11px; } Text { text: "1.425 BTC"; color: #8b949e; font-size: 11px; } }
+                    HorizontalLayout { alignment: space-between; Text { text: "94,265.00"; color: #f23645; font-size: 11px; } Text { text: "0.850 BTC"; color: #8b949e; font-size: 11px; } }
+                    HorizontalLayout { alignment: space-between; Text { text: "94,258.20"; color: #f23645; font-size: 11px; } Text { text: "3.210 BTC"; color: #8b949e; font-size: 11px; } }
+
+                    // Spread divider
+                    Rectangle {
+                        height: 22px;
+                        background: #21262d;
+                        border-radius: 3px;
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 6px;
+                            alignment: space-between;
+                            Text { text: "Spread"; color: #8b949e; font-size: 10px; vertical-alignment: center; }
+                            Text { text: "0.50"; color: #ffffff; font-size: 10px; font-weight: 600; vertical-alignment: center; }
+                        }
+                    }
+
+                    // Bids (Green)
+                    HorizontalLayout { alignment: space-between; Text { text: "94,249.50"; color: #089981; font-size: 11px; } Text { text: "2.115 BTC"; color: #8b949e; font-size: 11px; } }
+                    HorizontalLayout { alignment: space-between; Text { text: "94,242.00"; color: #089981; font-size: 11px; } Text { text: "0.620 BTC"; color: #8b949e; font-size: 11px; } }
+                    HorizontalLayout { alignment: space-between; Text { text: "94,238.10"; color: #089981; font-size: 11px; } Text { text: "4.890 BTC"; color: #8b949e; font-size: 11px; } }
+
+                    // Bottom Order Buttons
+                    Rectangle { vertical-stretch: 1; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Rectangle {
+                            height: 32px;
+                            horizontal-stretch: 1;
+                            border-radius: 4px;
+                            background: #089981;
+                            Text { text: "BUY"; color: #ffffff; font-weight: 700; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                        Rectangle {
+                            height: 32px;
+                            horizontal-stretch: 1;
+                            border-radius: 4px;
+                            background: #f23645;
+                            Text { text: "SELL"; color: #ffffff; font-weight: 700; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

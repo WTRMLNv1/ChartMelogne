@@ -1,5 +1,5 @@
 use chartmelogne_core::types::ChartType;
-use chartmelogne_slint::{run_chart_app, ChartAppConfig};
+use chartmelogne_slint::{run_chart_app, run_dashboard_app, ChartAppConfig};
 use std::env;
 use std::str::FromStr;
 
@@ -11,6 +11,7 @@ USAGE:
     chartmelogne [OPTIONS]
 
 OPTIONS:
+    --dashboard                       Launch the multi-panel trading dashboard window
     --allow-zoom, --zoom              Enable zoom interactions (default)
     --no-zoom, --disable-zoom         Disable zoom interactions
 
@@ -33,8 +34,9 @@ OPTIONS:
     );
 }
 
-fn parse_args() -> ChartAppConfig {
+fn parse_args() -> (ChartAppConfig, bool) {
     let mut config = ChartAppConfig::default();
+    let mut dashboard = false;
     let args: Vec<String> = env::args().skip(1).collect();
     let mut i = 0;
 
@@ -45,8 +47,8 @@ fn parse_args() -> ChartAppConfig {
                 print_help();
                 std::process::exit(0);
             }
-            "--allow-zoom" | "--zoom" => {
-                config.allow_zoom = true;
+            "--dashboard" => {
+                dashboard = true;
             }
             "--no-zoom" | "--disable-zoom" => {
                 config.allow_zoom = false;
@@ -126,15 +128,20 @@ fn parse_args() -> ChartAppConfig {
         i += 1;
     }
 
-    config
+    (config, dashboard)
 }
 
 fn main() -> Result<(), slint::PlatformError> {
-    let config = parse_args();
-    println!("Launching ChartMelogne (Rust + Slint + wgpu 30)...");
-    println!(
-        "Options: allow_zoom={}, show_axes={}, chart_type={}, show_volume={}, show_indicators={}",
-        config.allow_zoom, config.show_axes, config.chart_type, config.show_volume, config.show_indicators
-    );
-    run_chart_app(config)
+    let (config, dashboard) = parse_args();
+    if dashboard {
+        println!("Launching ChartMelogne Dashboard (Embedded ChartWidget)...");
+        run_dashboard_app(config)
+    } else {
+        println!("Launching ChartMelogne (Rust + Slint + wgpu 30)...");
+        println!(
+            "Options: allow_zoom={}, show_axes={}, chart_type={}, show_volume={}, show_indicators={}",
+            config.allow_zoom, config.show_axes, config.chart_type, config.show_volume, config.show_indicators
+        );
+        run_chart_app(config)
+    }
 }

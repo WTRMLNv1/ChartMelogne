@@ -226,3 +226,46 @@ fn main() -> Result<(), slint::PlatformError> {
     run_chart_app(config)
 }
 ```
+
+---
+
+### Example 4: Embedding `ChartWidget` in Your Custom Slint Window
+
+You can embed the `ChartWidget` component into any `.slint` file and connect the entire interactive controller with the `attach_chart_controller!` macro:
+
+```slint
+// In your custom Slint file (e.g. main_window.slint):
+import { ChartWidget } from "chartmelogne_slint/ui/chart_widget.slint";
+
+export component MainWindow inherits Window {
+    HorizontalLayout {
+        // Your custom sidebar
+        Rectangle { width: 200px; background: #161b22; }
+
+        // Embedded chart widget
+        chart := ChartWidget {
+            show_axes: true;                // or false
+            chart_type: "candlestick";      // "candlestick", "line", or "area"
+            show_volume: true;              // optional volume histogram
+            show_menu_button: false;        // hide built-in menu, use window buttons
+        }
+    }
+}
+```
+
+```rust
+// In your Rust main.rs:
+use chartmelogne_slint::{attach_chart_controller, ChartAppConfig};
+
+slint::include_modules!();
+
+fn main() -> Result<(), slint::PlatformError> {
+    let window = MainWindow::new()?;
+    let config = ChartAppConfig::default();
+
+    // 1-Line Controller Attachment:
+    attach_chart_controller!(&window, &config);
+
+    window.run()
+}
+```
