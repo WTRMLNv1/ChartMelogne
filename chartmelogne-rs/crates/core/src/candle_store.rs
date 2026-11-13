@@ -418,13 +418,22 @@ impl CandleStore {
         let idx = self.count - 1;
         let base = self.base_price;
 
+        let b = idx >> 8;
+        let cur_min = self.block_min[b];
+        let cur_max = self.block_max[b];
+        let cur_max_vol = self.block_max_vol[b];
+
+        let off = idx * 4;
+        let prev_l = base + self.ohlc[off + 2] as f64;
+        let prev_h = base + self.ohlc[off + 1] as f64;
+        let prev_v = self.volume[idx];
+
         self.time[idx] = bar.time;
         self.volume[idx] = bar.volume;
         if let Some(fl) = bar.flags {
             self.flags[idx] = fl;
         }
 
-        let off = idx * 4;
         let rel_o = (bar.open - base) as f32;
         let rel_h = (bar.high - base) as f32;
         let rel_l = (bar.low - base) as f32;
@@ -451,34 +460,50 @@ impl CandleStore {
             self.last_local_day = local_day;
         }
 
-        // Update block min/max summaries for affected block
-        let b = idx >> 8;
-        let b_start = b << 8;
-        let b_end = idx + 1;
-        let mut b_min = f64::INFINITY;
-        let mut b_max = f64::NEG_INFINITY;
-        let mut b_max_vol = 0u32;
-        for i in b_start..b_end {
-            if (self.flags[i] & 1) != 0 {
-                continue;
+        // Fast-path O(1) block summary update
+        let extreme_retracted = (prev_l == cur_min && bar.low > prev_l)
+            || (prev_h == cur_max && bar.high < prev_h)
+            || (prev_v == cur_max_vol && bar.volume < prev_v);
+
+        if !extreme_retracted && b < self.block_count {
+            if bar.low < cur_min {
+                self.block_min[b] = bar.low;
             }
-            let i_off = i * 4;
-            let l = base + self.ohlc[i_off + 2] as f64;
-            let h = base + self.ohlc[i_off + 1] as f64;
-            let v = self.volume[i];
-            if l < b_min {
-                b_min = l;
+            if bar.high > cur_max {
+                self.block_max[b] = bar.high;
             }
-            if h > b_max {
-                b_max = h;
+            if bar.volume > cur_max_vol {
+                self.block_max_vol[b] = bar.volume;
             }
-            if v > b_max_vol {
-                b_max_vol = v;
+        } else {
+            // Fallback: rescan the partial block only if an extreme retracted
+            let b_start = b << 8;
+            let b_end = idx + 1;
+            let mut b_min = f64::INFINITY;
+            let mut b_max = f64::NEG_INFINITY;
+            let mut b_max_vol = 0u32;
+            for i in b_start..b_end {
+                if (self.flags[i] & 1) != 0 {
+                    continue;
+                }
+                let i_off = i * 4;
+                let l = base + self.ohlc[i_off + 2] as f64;
+                let h = base + self.ohlc[i_off + 1] as f64;
+                let v = self.volume[i];
+                if l < b_min {
+                    b_min = l;
+                }
+                if h > b_max {
+                    b_max = h;
+                }
+                if v > b_max_vol {
+                    b_max_vol = v;
+                }
             }
+            self.block_min[b] = if b_min.is_infinite() { bar.low } else { b_min };
+            self.block_max[b] = if b_max.is_infinite() { bar.high } else { b_max };
+            self.block_max_vol[b] = b_max_vol;
         }
-        self.block_min[b] = if b_min.is_infinite() { bar.low } else { b_min };
-        self.block_max[b] = if b_max.is_infinite() { bar.high } else { b_max };
-        self.block_max_vol[b] = b_max_vol;
 
         idx
     }
