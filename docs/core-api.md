@@ -361,7 +361,12 @@ For unit testing and mock data generation, `chartmelogne_core::synthetic` provid
 
 ## 8. Visual Signal & Trade Markers (`ChartMarker`)
 
-`ChartMarker` allows the host application to draw upward-pointing (buy/green) and downward-pointing (sell/red) triangle markers at specific candle bars and price levels.
+`ChartMarker` allows the host application to draw upward-pointing (buy/green) and downward-pointing (sell/red) triangle markers at specific candle bars.
+
+### Placement Rules & Automatic Stacking
+- **Upwards Triangles**: Automatically placed a little bit below the **LOW** of the candle, with the tip pointing up toward the low wick.
+- **Downwards Triangles**: Automatically placed a little bit above the **HIGH** of the candle, with the tip pointing down toward the high wick.
+- **Multiple Triangles Stacking**: If multiple upward or downward triangles are assigned to the same candle, they automatically stack vertically with a clean gap between them (`stack_index` 0, 1, 2...).
 
 ### Flexibility: Pre-Mapped Bar Index or Auto-Mapped Timestamp
 
@@ -376,8 +381,8 @@ pub struct ChartMarker {
     pub candle_index: Option<usize>,
     /// Timestamp in epoch seconds/ms (if time-based; auto-mapped to closest candle by store)
     pub time: Option<f64>,
-    /// Price level in currency units
-    pub price: f64,
+    /// Optional fill / execution price level in currency units
+    pub price: Option<f64>,
     /// Up (triangle pointing up, green) or Down (triangle pointing down, red)
     pub direction: MarkerDirection,
     /// Optional RGBA color override. If None, Up defaults to green and Down defaults to red.
@@ -397,16 +402,20 @@ pub enum MarkerDirection {
 ### Constructors & Helpers
 
 ```rust
-// 1. Pre-mapped by candle index
-let buy_marker = ChartMarker::up(50, 48200.0).with_text("BUY");
-let sell_marker = ChartMarker::down(120, 52100.0).with_text("SELL");
+// 1. Placed below candle LOW / above candle HIGH:
+let buy_marker = ChartMarker::up(50).with_text("BUY");
+let sell_marker = ChartMarker::down(120).with_text("SELL");
 
-// 2. Auto-mapped by timestamp
-let ts_buy = ChartMarker::up_at_time(1700000000.0, 48200.0);
-let ts_sell = ChartMarker::down_at_time(1700050000.0, 52100.0);
+// 2. Multiple markers on the same candle stack automatically:
+let second_buy = ChartMarker::up(50).with_text("BUY 2"); // Stacks below buy_marker!
 
-// 3. Custom color and size
-let custom_marker = ChartMarker::up(80, 50000.0)
+// 3. Auto-mapped by timestamp:
+let ts_buy = ChartMarker::up_at_time(1700000000.0);
+let ts_sell = ChartMarker::down_at_time(1700050000.0);
+
+// 4. Optional fill price, custom color, and size:
+let custom_marker = ChartMarker::up(80)
+    .with_price(50000.0)
     .with_color([1.0, 0.84, 0.0, 1.0]) // Gold
     .with_size(14.0);
 ```
@@ -424,7 +433,7 @@ let nearest_bar_idx = store.find_bar_index_by_time(1700000000.0);
 // Resolve bar index for a marker (direct index or binary search from time)
 let bar_idx = store.resolve_marker_bar_index(&marker);
 
-// Convert to packed GPU instances (32 bytes per marker)
+// Convert to packed GPU instances with stacking indices (48 bytes per marker)
 let gpu_instances: Vec<MarkerGpuInstance> = store.get_markers_gpu_instances();
 ```
 

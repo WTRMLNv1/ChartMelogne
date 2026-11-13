@@ -359,62 +359,80 @@ fn test_marker_registration_and_gpu_instance_conversion() {
     store.set_data(&data, true).unwrap();
     let base = store.base_price();
 
-    // Up marker (Buy) defaults to green
-    let m_up = ChartMarker::up(10, 990.0).with_text("BUY");
+    // Up marker (Buy) defaults to green, placed below candle LOW
+    let m_up = ChartMarker::up(10).with_text("BUY");
     assert_eq!(m_up.direction, MarkerDirection::Up);
     assert_eq!(m_up.effective_color(), DEFAULT_MARKER_UP_COLOR);
 
-    // Down marker (Sell) defaults to red
-    let m_down = ChartMarker::down(25, 1050.0).with_text("SELL");
+    // Second Up marker on candle 10 (should stack below the first)
+    let m_up_2 = ChartMarker::up(10).with_text("BUY 2");
+
+    // Down marker (Sell) defaults to red, placed above candle HIGH
+    let m_down = ChartMarker::down(25).with_text("SELL");
     assert_eq!(m_down.direction, MarkerDirection::Down);
     assert_eq!(m_down.effective_color(), DEFAULT_MARKER_DOWN_COLOR);
 
     // Custom color marker
     let custom_color = [0.0, 1.0, 1.0, 1.0];
-    let m_custom = ChartMarker::up(40, 1010.0).with_color(custom_color);
+    let m_custom = ChartMarker::up(40).with_color(custom_color);
     assert_eq!(m_custom.effective_color(), custom_color);
 
     // Time-based marker (auto-mapped to closest candle index)
     let time_15 = data.time[15];
-    let m_time = ChartMarker::up_at_time(time_15, 995.0);
+    let m_time = ChartMarker::up_at_time(time_15);
     assert_eq!(m_time.candle_index, None);
     assert_eq!(m_time.time, Some(time_15));
     assert_eq!(store.resolve_marker_bar_index(&m_time), 15);
 
     // Time-based marker between candle 20 and 21 (closer to 20)
     let time_between = data.time[20] + 5.0; // step is 60s
-    let m_time_approx = ChartMarker::down_at_time(time_between, 1020.0);
+    let m_time_approx = ChartMarker::down_at_time(time_between);
     assert_eq!(store.resolve_marker_bar_index(&m_time_approx), 20);
 
     store.add_marker(m_up);
+    store.add_marker(m_up_2);
     store.add_marker(m_down);
     store.add_marker(m_custom);
     store.add_marker(m_time);
 
-    assert_eq!(store.markers().len(), 4);
+    assert_eq!(store.markers().len(), 5);
 
     let gpu_instances = store.get_markers_gpu_instances();
-    assert_eq!(gpu_instances.len(), 4);
+    assert_eq!(gpu_instances.len(), 5);
 
-    // Verify first marker (Up / Green)
+    // Verify first marker (Up / Green placed at candle 10 LOW, stack 0)
+    let low_10 = store.get_low(10);
     assert_eq!(gpu_instances[0].x, 10.0);
-    assert!((gpu_instances[0].y_rel - (990.0 - base) as f32).abs() < 1e-5);
+    assert!((gpu_instances[0].y_rel - (low_10 - base) as f32).abs() < 1e-5);
     assert_eq!(gpu_instances[0].dir, 0.0); // 0.0 is Up
+    assert_eq!(gpu_instances[0].stack_index, 0.0);
     assert_eq!(gpu_instances[0].color, DEFAULT_MARKER_UP_COLOR);
 
-    // Verify second marker (Down / Red)
-    assert_eq!(gpu_instances[1].x, 25.0);
-    assert!((gpu_instances[1].y_rel - (1050.0 - base) as f32).abs() < 1e-5);
-    assert_eq!(gpu_instances[1].dir, 1.0); // 1.0 is Down
-    assert_eq!(gpu_instances[1].color, DEFAULT_MARKER_DOWN_COLOR);
+    // Verify second marker (Up on candle 10 LOW, stacked at index 1)
+    assert_eq!(gpu_instances[1].x, 10.0);
+    assert!((gpu_instances[1].y_rel - (low_10 - base) as f32).abs() < 1e-5);
+    assert_eq!(gpu_instances[1].dir, 0.0);
+    assert_eq!(gpu_instances[1].stack_index, 1.0); // Stacked!
+    assert_eq!(gpu_instances[1].color, DEFAULT_MARKER_UP_COLOR);
 
-    // Verify third marker (Custom color)
-    assert_eq!(gpu_instances[2].color, custom_color);
+    // Verify third marker (Down / Red placed at candle 25 HIGH, stack 0)
+    let high_25 = store.get_high(25);
+    assert_eq!(gpu_instances[2].x, 25.0);
+    assert!((gpu_instances[2].y_rel - (high_25 - base) as f32).abs() < 1e-5);
+    assert_eq!(gpu_instances[2].dir, 1.0); // 1.0 is Down
+    assert_eq!(gpu_instances[2].stack_index, 0.0);
+    assert_eq!(gpu_instances[2].color, DEFAULT_MARKER_DOWN_COLOR);
 
-    // Verify fourth marker (Auto-mapped from timestamp to bar 15)
-    assert_eq!(gpu_instances[3].x, 15.0);
-    assert_eq!(gpu_instances[3].dir, 0.0);
-    assert_eq!(gpu_instances[3].color, DEFAULT_MARKER_UP_COLOR);
+    // Verify fourth marker (Custom color)
+    assert_eq!(gpu_instances[3].color, custom_color);
+
+    // Verify fifth marker (Auto-mapped from timestamp to bar 15, anchored at bar 15 LOW)
+    let low_15 = store.get_low(15);
+    assert_eq!(gpu_instances[4].x, 15.0);
+    assert!((gpu_instances[4].y_rel - (low_15 - base) as f32).abs() < 1e-5);
+    assert_eq!(gpu_instances[4].dir, 0.0);
+    assert_eq!(gpu_instances[4].stack_index, 0.0);
+    assert_eq!(gpu_instances[4].color, DEFAULT_MARKER_UP_COLOR);
 
     // Clear markers
     store.clear_markers();

@@ -218,15 +218,18 @@ pub enum MarkerDirection {
 pub const DEFAULT_MARKER_UP_COLOR: [f32; 4] = [0.149, 0.651, 0.604, 1.0]; // Emerald Green (#26a69a)
 pub const DEFAULT_MARKER_DOWN_COLOR: [f32; 4] = [0.937, 0.325, 0.314, 1.0]; // Coral Red (#ef5350)
 
-/// A visual signal or trade marker placed at a specific candle index or timestamp, and price level.
+/// A visual signal or trade marker placed at a specific candle index or timestamp.
+/// Upwards triangles are placed a little bit below the LOW of the candle.
+/// Downwards triangles are placed a little bit above the HIGH of the candle.
+/// Multiple triangles on the same candle are stacked with space between them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChartMarker {
     /// Candle index where the marker is placed (if pre-mapped by host)
     pub candle_index: Option<usize>,
     /// Timestamp in epoch seconds/ms (if time-based; auto-mapped to closest candle by store)
     pub time: Option<f64>,
-    /// Price level in currency units
-    pub price: f64,
+    /// Optional price level in currency units (e.g. fill/execution price)
+    pub price: Option<f64>,
     /// Up (triangle pointing up, green) or Down (triangle pointing down, red)
     pub direction: MarkerDirection,
     /// Optional RGBA color override. If None, Up defaults to green and Down defaults to red.
@@ -239,11 +242,24 @@ pub struct ChartMarker {
 
 impl ChartMarker {
     /// Create a marker pre-mapped to a specific candle index
-    pub fn new(candle_index: usize, price: f64, direction: MarkerDirection) -> Self {
+    pub fn new(candle_index: usize, direction: MarkerDirection) -> Self {
         Self {
             candle_index: Some(candle_index),
             time: None,
-            price,
+            price: None,
+            direction,
+            color: None,
+            size: 10.0,
+            text: None,
+        }
+    }
+
+    /// Create a marker pre-mapped to a specific candle index and fill price
+    pub fn new_with_price(candle_index: usize, price: f64, direction: MarkerDirection) -> Self {
+        Self {
+            candle_index: Some(candle_index),
+            time: None,
+            price: Some(price),
             direction,
             color: None,
             size: 10.0,
@@ -252,11 +268,11 @@ impl ChartMarker {
     }
 
     /// Create a marker at a specific timestamp (auto-mapped to the closest candle bar)
-    pub fn new_with_time(time: f64, price: f64, direction: MarkerDirection) -> Self {
+    pub fn new_with_time(time: f64, direction: MarkerDirection) -> Self {
         Self {
             candle_index: None,
             time: Some(time),
-            price,
+            price: None,
             direction,
             color: None,
             size: 10.0,
@@ -264,24 +280,50 @@ impl ChartMarker {
         }
     }
 
-    /// Helper to create an upward-pointing green triangle marker at a candle index
-    pub fn up(candle_index: usize, price: f64) -> Self {
-        Self::new(candle_index, price, MarkerDirection::Up)
+    /// Helper to create an upward-pointing green triangle marker below the candle low
+    pub fn up(candle_index: usize) -> Self {
+        Self::new(candle_index, MarkerDirection::Up)
     }
 
-    /// Helper to create a downward-pointing red triangle marker at a candle index
-    pub fn down(candle_index: usize, price: f64) -> Self {
-        Self::new(candle_index, price, MarkerDirection::Down)
+    /// Helper to create a downward-pointing red triangle marker above the candle high
+    pub fn down(candle_index: usize) -> Self {
+        Self::new(candle_index, MarkerDirection::Down)
+    }
+
+    /// Helper to create an upward-pointing green triangle marker with fill price below candle low
+    pub fn up_with_price(candle_index: usize, price: f64) -> Self {
+        Self::new_with_price(candle_index, price, MarkerDirection::Up)
+    }
+
+    /// Helper to create a downward-pointing red triangle marker with fill price above candle high
+    pub fn down_with_price(candle_index: usize, price: f64) -> Self {
+        Self::new_with_price(candle_index, price, MarkerDirection::Down)
+    }
+
+    pub fn up_at_price(candle_index: usize, price: f64) -> Self {
+        Self::up_with_price(candle_index, price)
+    }
+
+    pub fn down_at_price(candle_index: usize, price: f64) -> Self {
+        Self::down_with_price(candle_index, price)
     }
 
     /// Helper to create an upward-pointing green triangle marker at a timestamp
-    pub fn up_at_time(time: f64, price: f64) -> Self {
-        Self::new_with_time(time, price, MarkerDirection::Up)
+    pub fn up_at_time(time: f64) -> Self {
+        Self::new_with_time(time, MarkerDirection::Up)
     }
 
     /// Helper to create a downward-pointing red triangle marker at a timestamp
-    pub fn down_at_time(time: f64, price: f64) -> Self {
-        Self::new_with_time(time, price, MarkerDirection::Down)
+    pub fn down_at_time(time: f64) -> Self {
+        Self::new_with_time(time, MarkerDirection::Down)
+    }
+
+    pub fn up_at_time_and_price(time: f64, price: f64) -> Self {
+        Self::up_at_time(time).with_price(price)
+    }
+
+    pub fn down_at_time_and_price(time: f64, price: f64) -> Self {
+        Self::down_at_time(time).with_price(price)
     }
 
     pub fn with_candle_index(mut self, candle_index: usize) -> Self {
@@ -291,6 +333,11 @@ impl ChartMarker {
 
     pub fn with_time(mut self, time: f64) -> Self {
         self.time = Some(time);
+        self
+    }
+
+    pub fn with_price(mut self, price: f64) -> Self {
+        self.price = Some(price);
         self
     }
 
@@ -318,13 +365,17 @@ impl ChartMarker {
     }
 }
 
-/// GPU instance layout for instanced marker triangles (32 bytes per marker)
+/// GPU instance layout for instanced marker triangles (48 bytes per marker)
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MarkerGpuInstance {
-    pub x: f32,
-    pub y_rel: f32,
-    pub dir: f32, // 0.0 = Up, 1.0 = Down
-    pub size: f32,
-    pub color: [f32; 4],
+    pub x: f32,           // Candle index (float)
+    pub y_rel: f32,       // Candle low (for Up) or candle high (for Down) relative to base_price
+    pub dir: f32,         // 0.0 = Up, 1.0 = Down
+    pub size: f32,        // Marker visual size in logical pixels (e.g. 10.0)
+    pub stack_index: f32, // Stacking level (0.0, 1.0, 2.0...) on this candle
+    pub _pad0: f32,
+    pub _pad1: f32,
+    pub _pad2: f32,
+    pub color: [f32; 4],  // RGBA
 }

@@ -265,21 +265,58 @@ impl CandleStore {
     }
 
     /// Convert markers into GPU instance layout (relative to base_price).
-    /// Pre-mapped markers use candle_index directly; time-based markers are auto-mapped.
+    /// Upwards triangles anchor to candle LOW (placed below it).
+    /// Downwards triangles anchor to candle HIGH (placed above it).
+    /// Multiple triangles on the same candle are stacked with incrementing stack_index.
     pub fn get_markers_gpu_instances(&self) -> Vec<MarkerGpuInstance> {
         let base = self.base_price;
+        let mut up_counts = std::collections::HashMap::<usize, usize>::new();
+        let mut down_counts = std::collections::HashMap::<usize, usize>::new();
+
         self.markers
             .iter()
             .map(|m| {
                 let bar_idx = self.resolve_marker_bar_index(m);
+                let valid_idx = if self.count > 0 {
+                    bar_idx.min(self.count - 1)
+                } else {
+                    0
+                };
+
+                let (y_rel, dir_f32, stack_f32) = match m.direction {
+                    MarkerDirection::Up => {
+                        let stack = up_counts.entry(valid_idx).or_insert(0);
+                        let s = *stack as f32;
+                        *stack += 1;
+                        let low = if self.count > 0 {
+                            self.get_low(valid_idx)
+                        } else {
+                            m.price.unwrap_or(0.0)
+                        };
+                        ((low - base) as f32, 0.0, s)
+                    }
+                    MarkerDirection::Down => {
+                        let stack = down_counts.entry(valid_idx).or_insert(0);
+                        let s = *stack as f32;
+                        *stack += 1;
+                        let high = if self.count > 0 {
+                            self.get_high(valid_idx)
+                        } else {
+                            m.price.unwrap_or(0.0)
+                        };
+                        ((high - base) as f32, 1.0, s)
+                    }
+                };
+
                 MarkerGpuInstance {
-                    x: bar_idx as f32,
-                    y_rel: (m.price - base) as f32,
-                    dir: match m.direction {
-                        MarkerDirection::Up => 0.0,
-                        MarkerDirection::Down => 1.0,
-                    },
+                    x: valid_idx as f32,
+                    y_rel,
+                    dir: dir_f32,
                     size: m.size,
+                    stack_index: stack_f32,
+                    _pad0: 0.0,
+                    _pad1: 0.0,
+                    _pad2: 0.0,
                     color: m.effective_color(),
                 }
             })

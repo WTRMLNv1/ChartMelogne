@@ -198,23 +198,29 @@ Indicators often have warmup periods (e.g., the first 20 bars of an EMA 20). If 
 
 ## Signal & Trade Markers (Up & Down Triangles)
 
-`ChartMelogne` supports drawing visual markers—green upward-pointing triangles for buys/signals, and red downward-pointing triangles for sells—at specific price levels.
+`ChartMelogne` supports drawing visual markers—green upward-pointing triangles for buys/signals, and red downward-pointing triangles for sells.
+
+- **Placement**: Upwards triangles are placed a little bit below the **LOW** of the candle (pointing up toward the low wick). Downwards triangles are placed a little bit above the **HIGH** of the candle (pointing down toward the high wick).
+- **Stacking**: If multiple triangles are added on the same candle, they automatically stack vertically with neat spacing between them.
 
 ### Host API: Pre-Mapped Index or Auto-Mapped Timestamp
 
 ```rust
 use chartmelogne_core::types::ChartMarker;
 
-// 1. Pre-mapped by candle index:
-let buy = ChartMarker::up(50, 48500.0).with_text("BUY");
-let sell = ChartMarker::down(120, 52000.0).with_text("SELL");
+// 1. Placed below candle LOW / above candle HIGH:
+let buy = ChartMarker::up(50).with_text("BUY");
+let sell = ChartMarker::down(120).with_text("SELL");
 
-// 2. Auto-mapped by timestamp (binary-searched to nearest candle):
-let ts_marker = ChartMarker::up_at_time(1700000000.0, 48500.0);
+// 2. Multiple markers on the same candle stack automatically:
+let second_buy = ChartMarker::up(50).with_text("BUY 2"); // Stacks below the first buy!
 
-// 3. Pass markers into ChartAppConfig:
+// 3. Auto-mapped by timestamp (binary-searched to nearest candle):
+let ts_marker = ChartMarker::up_at_time(1700000000.0);
+
+// 4. Pass markers into ChartAppConfig:
 let mut config = ChartAppConfig::default();
-config.markers = vec![buy, sell, ts_marker];
+config.markers = vec![buy, second_buy, sell, ts_marker];
 ```
 
 ---

@@ -295,17 +295,21 @@ pub struct MarkerUniforms {
 }
 ```
 
-### `MarkerGpuInstance` (32 Bytes per Marker)
+### `MarkerGpuInstance` (48 Bytes per Marker)
 
 ```rust
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MarkerGpuInstance {
-    pub x: f32,          // Candle index (float)
-    pub y_rel: f32,      // Price - base_price
-    pub dir: f32,        // 0.0 for Up (pointing up / green), 1.0 for Down (pointing down / red)
-    pub size: f32,       // Marker size in logical pixels
-    pub color: [f32; 4], // RGBA color
+    pub x: f32,           // Candle index (float)
+    pub y_rel: f32,       // Candle low (for Up) or candle high (for Down) relative to base_price
+    pub dir: f32,         // 0.0 for Up (pointing up / green), 1.0 for Down (pointing down / red)
+    pub size: f32,        // Marker visual size in logical pixels (e.g. 10.0)
+    pub stack_index: f32, // Stacking level (0.0, 1.0, 2.0...) on this candle
+    pub _pad0: f32,
+    pub _pad1: f32,
+    pub _pad2: f32,
+    pub color: [f32; 4],  // RGBA color
 }
 ```
 

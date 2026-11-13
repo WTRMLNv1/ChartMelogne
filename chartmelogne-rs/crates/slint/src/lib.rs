@@ -45,13 +45,15 @@ impl Default for ChartAppConfig {
             HostIndicator::new("SMA 50", [0.612, 0.153, 0.690, 1.0], sma50),
         ];
 
-        // Host provides markers: both pre-mapped (index) and auto-mapped (timestamp)
+        // Host provides markers: pre-mapped (index), auto-mapped (timestamp), and stacking
         let mut markers = Vec::new();
         if candle_data.time.len() > 150 {
-            // Pre-mapped by candle index (Buy signal below low)
-            markers.push(ChartMarker::up(50, candle_data.low[50] * 0.998).with_text("BUY"));
-            // Auto-mapped from timestamp (Sell signal above high)
-            markers.push(ChartMarker::down_at_time(candle_data.time[120], candle_data.high[120] * 1.002).with_text("SELL"));
+            // Pre-mapped by candle index: placed below candle low
+            markers.push(ChartMarker::up(50).with_text("BUY"));
+            // Second marker on the same candle: automatically stacks below the first
+            markers.push(ChartMarker::up(50).with_text("BUY 2"));
+            // Auto-mapped from timestamp: placed above candle high
+            markers.push(ChartMarker::down_at_time(candle_data.time[120]).with_text("SELL"));
         }
 
         Self {

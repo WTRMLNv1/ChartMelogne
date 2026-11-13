@@ -253,6 +253,10 @@ fn test_marker_rendering_pipeline() {
             y_rel: 25.0,
             dir: 0.0, // Up / Green
             size: 12.0,
+            stack_index: 0.0,
+            _pad0: 0.0,
+            _pad1: 0.0,
+            _pad2: 0.0,
             color: chartmelogne_core::types::DEFAULT_MARKER_UP_COLOR,
         },
         chartmelogne_core::types::MarkerGpuInstance {
@@ -260,6 +264,10 @@ fn test_marker_rendering_pipeline() {
             y_rel: 45.0,
             dir: 1.0, // Down / Red
             size: 12.0,
+            stack_index: 0.0,
+            _pad0: 0.0,
+            _pad1: 0.0,
+            _pad2: 0.0,
             color: chartmelogne_core::types::DEFAULT_MARKER_DOWN_COLOR,
         },
     ];

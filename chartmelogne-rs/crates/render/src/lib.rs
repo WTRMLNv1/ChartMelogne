@@ -833,6 +833,11 @@ impl ChartRenderer {
                             offset: 16,
                             shader_location: 1,
                         },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x4,
+                            offset: 32,
+                            shader_location: 2,
+                        },
                     ],
                 })],
             },
