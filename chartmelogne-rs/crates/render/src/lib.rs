@@ -165,6 +165,7 @@ pub struct ChartRenderer {
     grid_bind_group: wgpu::BindGroup,
     grid_vertex_buffer: wgpu::Buffer,
     grid_vertex_capacity: usize,
+    grid_vertices: Vec<[f32; 2]>,
 
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
@@ -667,6 +668,7 @@ impl ChartRenderer {
             grid_bind_group,
             grid_vertex_buffer,
             grid_vertex_capacity,
+            grid_vertices: Vec::with_capacity(256),
             instance_buffer,
             instance_capacity: initial_capacity,
             instance_count: 0,
@@ -893,7 +895,7 @@ impl ChartRenderer {
         // --- GRID PASS SETUP ---
         let mut grid_vertex_count = 0usize;
         if let Some(grid_col) = view.grid_color {
-            let mut vertices: Vec<[f32; 2]> = Vec::new();
+            self.grid_vertices.clear();
             let pw = self.plot_width as f32;
             let ph = self.plot_height as f32;
 
@@ -901,7 +903,7 @@ impl ChartRenderer {
             for &y in &view.horizontal_grid_y {
                 let y0 = (y - 0.5).floor();
                 let y1 = y0 + 1.0;
-                vertices.extend_from_slice(&[
+                self.grid_vertices.extend_from_slice(&[
                     [0.0, y0],
                     [pw, y0],
                     [pw, y1],
@@ -915,7 +917,7 @@ impl ChartRenderer {
             for &x in &view.vertical_grid_x {
                 let x0 = (x - 0.5).floor();
                 let x1 = x0 + 1.0;
-                vertices.extend_from_slice(&[
+                self.grid_vertices.extend_from_slice(&[
                     [x0, 0.0],
                     [x1, 0.0],
                     [x1, ph],
@@ -925,7 +927,7 @@ impl ChartRenderer {
                 ]);
             }
 
-            grid_vertex_count = vertices.len();
+            grid_vertex_count = self.grid_vertices.len();
             if grid_vertex_count > 0 {
                 if grid_vertex_count > self.grid_vertex_capacity {
                     let new_cap = grid_vertex_count.next_power_of_two();
@@ -940,7 +942,7 @@ impl ChartRenderer {
                 self.queue.write_buffer(
                     &self.grid_vertex_buffer,
                     0,
-                    bytemuck::cast_slice(&vertices),
+                    bytemuck::cast_slice(&self.grid_vertices),
                 );
 
                 let grid_uniforms = GridUniforms {
