@@ -18,6 +18,9 @@ OPTIONS:
     --allow-pan, --pan                Enable pan interactions (default)
     --no-pan, --disable-pan           Disable pan interactions
 
+    --show-crosshair, --crosshair     Show cursor crosshair when hovering (default)
+    --no-crosshair, --hide-crosshair  Hide cursor crosshair when hovering
+
     --show-axes, --axes               Show price and time axes (default)
     --no-axes, --hide-axes            Hide price and time axes
 
@@ -70,9 +73,13 @@ fn parse_hex_color(hex: &str) -> Result<[f32; 4], String> {
 }
 
 fn parse_args() -> (ChartAppConfig, bool) {
+    parse_args_iter(env::args().skip(1))
+}
+
+fn parse_args_iter<I: IntoIterator<Item = String>>(iter: I) -> (ChartAppConfig, bool) {
     let mut config = ChartAppConfig::default();
     let mut dashboard = false;
-    let args: Vec<String> = env::args().skip(1).collect();
+    let args: Vec<String> = iter.into_iter().collect();
     let mut i = 0;
 
     while i < args.len() {
@@ -101,6 +108,16 @@ fn parse_args() -> (ChartAppConfig, bool) {
             arg if arg.starts_with("--allow-pan=") => {
                 let val = arg.trim_start_matches("--allow-pan=");
                 config.allow_pan = val.parse().unwrap_or(true);
+            }
+            "--show-crosshair" | "--crosshair" => {
+                config.show_crosshair = true;
+            }
+            "--no-crosshair" | "--hide-crosshair" => {
+                config.show_crosshair = false;
+            }
+            arg if arg.starts_with("--show-crosshair=") => {
+                let val = arg.trim_start_matches("--show-crosshair=");
+                config.show_crosshair = val.parse().unwrap_or(true);
             }
             "--show-axes" | "--axes" => {
                 config.show_axes = true;
@@ -259,8 +276,8 @@ fn main() -> Result<(), slint::PlatformError> {
     } else {
         println!("Launching ChartMelogne (Rust + Slint + wgpu 30)...");
         println!(
-            "Options: allow_zoom={}, allow_pan={}, show_axes={}, chart_type={}, show_volume={}, show_indicators={}, bg={:?}, up={:?}, down={:?}",
-            config.allow_zoom, config.allow_pan, config.show_axes, config.chart_type, config.show_volume, config.show_indicators,
+            "Options: allow_zoom={}, allow_pan={}, show_crosshair={}, show_axes={}, chart_type={}, show_volume={}, show_indicators={}, bg={:?}, up={:?}, down={:?}",
+            config.allow_zoom, config.allow_pan, config.show_crosshair, config.show_axes, config.chart_type, config.show_volume, config.show_indicators,
             config.background_color, config.up_color, config.down_color
         );
         run_chart_app(config)
@@ -297,5 +314,20 @@ mod tests {
         // Invalid
         assert!(parse_hex_color("not_a_color").is_err());
         assert!(parse_hex_color("#12").is_err());
+    }
+
+    #[test]
+    fn test_crosshair_cli_args() {
+        let (config, _) = parse_args_iter(vec!["--no-crosshair".to_string()]);
+        assert!(!config.show_crosshair);
+
+        let (config, _) = parse_args_iter(vec!["--hide-crosshair".to_string()]);
+        assert!(!config.show_crosshair);
+
+        let (config, _) = parse_args_iter(vec!["--show-crosshair=false".to_string()]);
+        assert!(!config.show_crosshair);
+
+        let (config, _) = parse_args_iter(vec!["--crosshair".to_string()]);
+        assert!(config.show_crosshair);
     }
 }

@@ -114,6 +114,7 @@ export component ChartWidget inherits Rectangle {
     // Optional Features & Flags
     in-out property <bool> allow_zoom: true;
     in-out property <bool> allow_pan: true;
+    in-out property <bool> show_crosshair: true;
     in-out property <bool> show_axes: true;
     in-out property <string> chart_type: "candlestick";
     in-out property <bool> show_volume: true;
@@ -134,6 +135,7 @@ export component ChartWidget inherits Rectangle {
     callback toggle_auto_y();
     callback toggle_allow_zoom(bool);
     callback toggle_allow_pan(bool);
+    callback toggle_show_crosshair(bool);
     callback toggle_show_axes(bool);
     callback toggle_chart_type(string);
     callback toggle_show_volume(bool);
@@ -170,7 +172,7 @@ export component ChartWidget inherits Rectangle {
             }
 
             // 3. Crosshair Lines
-            if root.crosshair_active : Rectangle {
+            if root.show_crosshair && root.crosshair_active : Rectangle {
                 // Vertical crosshair line
                 Rectangle {
                     x: root.crosshair_snapped_x - 0.5px;
@@ -274,7 +276,7 @@ export component ChartWidget inherits Rectangle {
             TouchArea {
                 width: 100%;
                 height: 100%;
-                mouse-cursor: crosshair;
+                mouse-cursor: root.show_crosshair ? crosshair : default;
 
                 moved => {
                     if (self.pressed) {
@@ -399,7 +401,17 @@ export component ChartWidget inherits Rectangle {
                         }
                     }
 
-                    // 3. Show axes
+                    // 3. Show crosshair
+                    CheckboxMenuItem {
+                        text: "Show crosshair";
+                        checked: root.show_crosshair;
+                        toggled => {
+                            root.show_crosshair = !root.show_crosshair;
+                            root.toggle_show_crosshair(root.show_crosshair);
+                        }
+                    }
+
+                    // 4. Show axes
                     CheckboxMenuItem {
                         text: "Show axes";
                         checked: root.show_axes;
@@ -529,7 +541,7 @@ export component ChartWidget inherits Rectangle {
             }
 
             // Crosshair Price Badge
-            if root.crosshair_active && root.crosshair_y >= 0px && root.crosshair_y <= self.height : Rectangle {
+            if root.show_crosshair && root.crosshair_active && root.crosshair_y >= 0px && root.crosshair_y <= self.height : Rectangle {
                 x: 2px;
                 y: root.crosshair_y - 9px;
                 width: 58px;
@@ -589,7 +601,7 @@ export component ChartWidget inherits Rectangle {
             }
 
             // Crosshair Time Badge
-            if root.crosshair_active : Rectangle {
+            if root.show_crosshair && root.crosshair_active : Rectangle {
                 x: root.crosshair_snapped_x - 35px;
                 y: 4px;
                 width: 70px;

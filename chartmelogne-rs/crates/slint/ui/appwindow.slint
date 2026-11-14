@@ -51,6 +51,7 @@ export component AppWindow inherits Window {
     // Chart Flags & Optional Features
     in-out property <bool> allow_zoom <=> chart.allow_zoom;
     in-out property <bool> allow_pan <=> chart.allow_pan;
+    in-out property <bool> show_crosshair <=> chart.show_crosshair;
     in-out property <bool> show_axes <=> chart.show_axes;
     in-out property <string> chart_type <=> chart.chart_type;
     in-out property <bool> show_volume <=> chart.show_volume;
@@ -70,6 +71,7 @@ export component AppWindow inherits Window {
     callback toggle_auto_y();
     callback toggle_allow_zoom(bool);
     callback toggle_allow_pan(bool);
+    callback toggle_show_crosshair(bool);
     callback toggle_show_axes(bool);
     callback toggle_chart_type(string);
     callback toggle_show_volume(bool);
@@ -89,6 +91,8 @@ export component AppWindow inherits Window {
         price_axis_scrolled(dy, cy) => { root.price_axis_scrolled(dy, cy); }
         toggle_auto_y() => { root.toggle_auto_y(); }
         toggle_allow_zoom(val) => { root.toggle_allow_zoom(val); }
+        toggle_allow_pan(val) => { root.toggle_allow_pan(val); }
+        toggle_show_crosshair(val) => { root.toggle_show_crosshair(val); }
         toggle_show_axes(val) => { root.toggle_show_axes(val); }
         toggle_chart_type(val) => { root.toggle_chart_type(val); }
         toggle_show_volume(val) => { root.toggle_show_volume(val); }
@@ -147,6 +151,7 @@ export component DashboardWindow inherits Window {
     // Chart Flags & Optional Features
     in-out property <bool> allow_zoom <=> chart.allow_zoom;
     in-out property <bool> allow_pan <=> chart.allow_pan;
+    in-out property <bool> show_crosshair <=> chart.show_crosshair;
     in-out property <bool> show_axes <=> chart.show_axes;
     in-out property <string> chart_type <=> chart.chart_type;
     in-out property <bool> show_volume <=> chart.show_volume;
@@ -165,6 +170,7 @@ export component DashboardWindow inherits Window {
     callback toggle_auto_y();
     callback toggle_allow_zoom(bool);
     callback toggle_allow_pan(bool);
+    callback toggle_show_crosshair(bool);
     callback toggle_show_axes(bool);
     callback toggle_chart_type(string);
     callback toggle_show_volume(bool);
@@ -516,6 +522,8 @@ export component DashboardWindow inherits Window {
                 price_axis_scrolled(dy, cy) => { root.price_axis_scrolled(dy, cy); }
                 toggle_auto_y() => { root.toggle_auto_y(); }
                 toggle_allow_zoom(val) => { root.toggle_allow_zoom(val); }
+                toggle_allow_pan(val) => { root.toggle_allow_pan(val); }
+                toggle_show_crosshair(val) => { root.toggle_show_crosshair(val); }
                 toggle_show_axes(val) => { root.toggle_show_axes(val); }
                 toggle_chart_type(val) => { root.toggle_chart_type(val); }
                 toggle_show_volume(val) => { root.toggle_show_volume(val); }

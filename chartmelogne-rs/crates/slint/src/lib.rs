@@ -18,6 +18,7 @@ pub struct ChartAppConfig {
     pub utc_offset_minutes: i32,
     pub allow_zoom: bool,
     pub allow_pan: bool,
+    pub show_crosshair: bool,
     pub show_axes: bool,
     pub chart_type: ChartType,
     pub show_volume: bool,
@@ -65,6 +66,7 @@ impl Default for ChartAppConfig {
             utc_offset_minutes: 330,
             allow_zoom: true,
             allow_pan: true,
+            show_crosshair: true,
             show_axes: true,
             chart_type: ChartType::Candlestick,
             show_volume: true,
@@ -91,6 +93,7 @@ pub struct ChartAppState {
     pub crosshair_screen_y: f32,
     pub allow_zoom: bool,
     pub allow_pan: bool,
+    pub show_crosshair: bool,
     pub show_axes: bool,
     pub chart_type: ChartType,
     pub show_volume: bool,
@@ -122,6 +125,7 @@ macro_rules! attach_chart_controller {
 
         ui.set_allow_zoom(config.allow_zoom);
         ui.set_allow_pan(config.allow_pan);
+        ui.set_show_crosshair(config.show_crosshair);
         ui.set_show_axes(config.show_axes);
         ui.set_chart_type(config.chart_type.to_string().into());
         ui.set_show_volume(config.show_volume);
@@ -189,6 +193,7 @@ macro_rules! attach_chart_controller {
             crosshair_screen_y: 0.0,
             allow_zoom: config.allow_zoom,
             allow_pan: config.allow_pan,
+            show_crosshair: config.show_crosshair,
             show_axes: config.show_axes,
             chart_type: config.chart_type,
             show_volume: config.show_volume,
@@ -342,6 +347,21 @@ macro_rules! attach_chart_controller {
             ui.on_toggle_allow_pan(move |val| {
                 let mut st = st_rc.borrow_mut();
                 st.allow_pan = val;
+            });
+        }
+
+        // Toggle Show Crosshair Callback
+        {
+            let st_rc = Rc::clone(&state);
+            let ui_handle = ui.as_weak();
+            ui.on_toggle_show_crosshair(move |val| {
+                let mut st = st_rc.borrow_mut();
+                st.show_crosshair = val;
+                st.chart_dirty = true;
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.set_show_crosshair(val);
+                    ui.window().request_redraw();
+                }
             });
         }
 
@@ -501,6 +521,7 @@ macro_rules! attach_chart_controller {
                                 crosshair_screen_y,
                                 allow_zoom,
                                 allow_pan,
+                                show_crosshair,
                                 show_axes,
                                 chart_type,
                                 show_volume,
@@ -629,7 +650,7 @@ macro_rules! attach_chart_controller {
                                     let parts = time_axis.get_local_parts(hover_time);
                                     let time_badge_str = format!("{} {:02}:{:02}", parts.day, parts.hours, parts.minutes);
 
-                                    ui.set_crosshair_active(true);
+                                    ui.set_crosshair_active(show_crosshair);
                                     ui.set_crosshair_x(crosshair_screen_x);
                                     ui.set_crosshair_y(crosshair_screen_y);
                                     ui.set_crosshair_snapped_x(snapped_x_logical);
@@ -797,5 +818,14 @@ mod tests {
         assert_eq!(config.background_color[0], 0.0);
         assert_eq!(config.up_color[1], 1.0);
         assert_eq!(config.down_color[0], 1.0);
+    }
+
+    #[test]
+    fn test_chart_app_config_show_crosshair() {
+        let mut config = ChartAppConfig::default();
+        assert!(config.show_crosshair);
+
+        config.show_crosshair = false;
+        assert!(!config.show_crosshair);
     }
 }
