@@ -340,9 +340,11 @@ pub struct ViewParams {
     pub volume_up_color: [f32; 4],
     pub volume_down_color: [f32; 4],
     pub allow_zoom: bool,
+    pub allow_pan: bool,
     pub show_axes: bool,
     pub chart_type: chartmelogne_core::types::ChartType,
     pub show_indicators: bool,
+    pub show_markers: bool,
 }
 ```
 
@@ -351,6 +353,7 @@ pub struct ViewParams {
 let view = ViewParams::default();
 // up_color: [0.03, 0.65, 0.55, 1.0] (#089981)
 // down_color: [0.95, 0.25, 0.33, 1.0] (#f23645)
+// clear_color: Some(wgpu::Color { r: 0.0745, g: 0.0902, b: 0.1333, a: 1.0 }) (#131722)
 // volume_height_ratio: 0.20 (volume occupies bottom 20% of viewport)
 // chart_type: ChartType::Candlestick
 ```

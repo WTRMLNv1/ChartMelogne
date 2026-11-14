@@ -67,13 +67,18 @@ component CheckboxMenuItem inherits Rectangle {
 }
 
 export component ChartWidget inherits Rectangle {
-    background: #131722;
+    background: root.background_color;
     clip: true;
 
     // Viewport image & dimensions
     in-out property <image> chart_texture;
     in-out property <length> plot_width <=> plot_area.width;
     in-out property <length> plot_height <=> plot_area.height;
+
+    // Styling & Theme Colors
+    in-out property <color> background_color: #131722;
+    in-out property <color> up_color: #089981;
+    in-out property <color> down_color: #ef5350;
 
     // Axis Ticks
     in-out property <[PriceTickUi]> price_ticks: [];
@@ -91,7 +96,7 @@ export component ChartWidget inherits Rectangle {
     in-out property <bool> last_price_visible: true;
     in-out property <length> last_price_y: 0px;
     in-out property <string> last_price_str: "";
-    in-out property <color> last_price_color: #089981;
+    in-out property <color> last_price_color: root.up_color;
 
     // Auto / Manual Y Mode
     in-out property <bool> auto_y_mode: true;
@@ -104,7 +109,7 @@ export component ChartWidget inherits Rectangle {
     in-out property <string> hud_low: "";
     in-out property <string> hud_close: "";
     in-out property <string> hud_volume: "";
-    in-out property <color> hud_ohlc_color: #089981;
+    in-out property <color> hud_ohlc_color: root.up_color;
 
     // Optional Features & Flags
     in-out property <bool> allow_zoom: true;
@@ -146,7 +151,7 @@ export component ChartWidget inherits Rectangle {
             horizontal-stretch: 1;
             vertical-stretch: 1;
             clip: true;
-            background: #131722;
+            background: root.background_color;
 
             // 1. wgpu Candle & Grid Texture
             Image {
@@ -482,7 +487,7 @@ export component ChartWidget inherits Rectangle {
             row: 0;
             col: 1;
             width: 65px;
-            background: #131722;
+            background: root.background_color;
             clip: true;
 
             // Border left separator
@@ -560,7 +565,7 @@ export component ChartWidget inherits Rectangle {
             row: 1;
             col: 0;
             height: 28px;
-            background: #131722;
+            background: root.background_color;
             clip: true;
 
             // Border top separator
@@ -608,7 +613,7 @@ export component ChartWidget inherits Rectangle {
             col: 1;
             width: 65px;
             height: 28px;
-            background: #131722;
+            background: root.background_color;
 
             Rectangle {
                 x: 0px;

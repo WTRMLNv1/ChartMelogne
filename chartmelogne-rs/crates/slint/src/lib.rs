@@ -25,6 +25,9 @@ pub struct ChartAppConfig {
     pub indicators: Vec<HostIndicator>,
     pub show_markers: bool,
     pub markers: Vec<ChartMarker>,
+    pub background_color: [f32; 4],
+    pub up_color: [f32; 4],
+    pub down_color: [f32; 4],
 }
 
 impl Default for ChartAppConfig {
@@ -69,6 +72,9 @@ impl Default for ChartAppConfig {
             indicators,
             show_markers: true,
             markers,
+            background_color: [0.0745, 0.0902, 0.1333, 1.0], // #131722
+            up_color: [0.0314, 0.600, 0.506, 1.0],           // #089981
+            down_color: [0.937, 0.325, 0.314, 1.0],         // #ef5350
         }
     }
 }
@@ -89,6 +95,9 @@ pub struct ChartAppState {
     pub chart_type: ChartType,
     pub show_volume: bool,
     pub show_indicators: bool,
+    pub background_color: [f32; 4],
+    pub up_color: [f32; 4],
+    pub down_color: [f32; 4],
     pub chart_dirty: bool,
 }
 
@@ -117,6 +126,28 @@ macro_rules! attach_chart_controller {
         ui.set_chart_type(config.chart_type.to_string().into());
         ui.set_show_volume(config.show_volume);
         ui.set_show_indicators(config.show_indicators);
+
+        let up_slint_color = slint::Color::from_argb_u8(
+            (config.up_color[3].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (config.up_color[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (config.up_color[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (config.up_color[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+        );
+        let down_slint_color = slint::Color::from_argb_u8(
+            (config.down_color[3].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (config.down_color[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (config.down_color[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (config.down_color[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+        );
+        let bg_slint_color = slint::Color::from_argb_u8(
+            (config.background_color[3].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (config.background_color[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (config.background_color[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (config.background_color[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+        );
+        ui.set_background_color(bg_slint_color);
+        ui.set_up_color(up_slint_color);
+        ui.set_down_color(down_slint_color);
 
         let count = config.candle_data.time.len();
         let mut store = CandleStore::new(count, config.utc_offset_minutes);
@@ -162,6 +193,9 @@ macro_rules! attach_chart_controller {
             chart_type: config.chart_type,
             show_volume: config.show_volume,
             show_indicators: config.show_indicators,
+            background_color: config.background_color,
+            up_color: config.up_color,
+            down_color: config.down_color,
             chart_dirty: true,
         }));
 
@@ -471,8 +505,24 @@ macro_rules! attach_chart_controller {
                                 chart_type,
                                 show_volume,
                                 show_indicators,
+                                background_color,
+                                up_color,
+                                down_color,
                                 ..
                             } = *st;
+
+                            let cur_up_color = slint::Color::from_argb_u8(
+                                (up_color[3].clamp(0.0, 1.0) * 255.0).round() as u8,
+                                (up_color[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+                                (up_color[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+                                (up_color[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+                            );
+                            let cur_down_color = slint::Color::from_argb_u8(
+                                (down_color[3].clamp(0.0, 1.0) * 255.0).round() as u8,
+                                (down_color[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+                                (down_color[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+                                (down_color[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+                            );
 
                             if should_render {
                                 viewport.set_size(phys_w as f64, phys_h as f64, dpr as f64);
@@ -552,9 +602,9 @@ macro_rules! attach_chart_controller {
                                 ui.set_last_price_y(last_y_logical);
                                 ui.set_last_price_str(to_fixed(last_close, 2).into());
                                 ui.set_last_price_color(if is_up {
-                                    slint::Color::from_argb_u8(255, 8, 153, 129)
+                                    cur_up_color
                                 } else {
-                                    slint::Color::from_argb_u8(255, 242, 54, 69)
+                                    cur_down_color
                                 });
                             } else if !show_axes {
                                 ui.set_last_price_visible(false);
@@ -600,9 +650,9 @@ macro_rules! attach_chart_controller {
                                     ui.set_hud_close(to_fixed(c, 2).into());
                                     ui.set_hud_volume(format_volume(v).into());
                                     ui.set_hud_ohlc_color(if is_up {
-                                        slint::Color::from_argb_u8(255, 8, 153, 129)
+                                        cur_up_color
                                     } else {
-                                        slint::Color::from_argb_u8(255, 242, 54, 69)
+                                        cur_down_color
                                     });
 
                                     Some(hovered_idx)
@@ -656,13 +706,13 @@ macro_rules! attach_chart_controller {
                                 base_price: store.base_price() as f32,
                                 count: store.count(),
                                 dpr: dpr as f32,
-                                up_color: [0.03, 0.65, 0.55, 1.0],
-                                down_color: [0.95, 0.25, 0.33, 1.0],
+                                up_color,
+                                down_color,
                                 clear_color: Some(wgpu::Color {
-                                    r: 0.0745,
-                                    g: 0.0902,
-                                    b: 0.1333,
-                                    a: 1.0,
+                                    r: background_color[0] as f64,
+                                    g: background_color[1] as f64,
+                                    b: background_color[2] as f64,
+                                    a: background_color[3] as f64,
                                 }),
                                 grid_color: Some([0.1412, 0.1529, 0.1961, 1.0]),
                                 horizontal_grid_y: grid_y,
@@ -670,8 +720,8 @@ macro_rules! attach_chart_controller {
                                 show_volume,
                                 volume_max: max_vol,
                                 volume_height_ratio: 0.20,
-                                volume_up_color: [0.03, 0.65, 0.55, 0.35],
-                                volume_down_color: [0.95, 0.25, 0.33, 0.35],
+                                volume_up_color: [up_color[0], up_color[1], up_color[2], 0.35],
+                                volume_down_color: [down_color[0], down_color[1], down_color[2], 0.35],
                                 allow_zoom,
                                 allow_pan,
                                 show_axes,
@@ -727,4 +777,25 @@ pub fn run_dashboard_app(config: ChartAppConfig) -> Result<(), slint::PlatformEr
     let ui = DashboardWindow::new()?;
     attach_chart_controller!(&ui, &config);
     ui.run()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chart_app_config_custom_colors() {
+        let mut config = ChartAppConfig::default();
+        assert_eq!(config.background_color, [0.0745, 0.0902, 0.1333, 1.0]);
+        assert_eq!(config.up_color, [0.0314, 0.600, 0.506, 1.0]);
+        assert_eq!(config.down_color, [0.937, 0.325, 0.314, 1.0]);
+
+        // Custom theme colors
+        config.background_color = [0.0, 0.0, 0.0, 1.0];
+        config.up_color = [0.0, 1.0, 0.0, 1.0];
+        config.down_color = [1.0, 0.0, 0.0, 1.0];
+        assert_eq!(config.background_color[0], 0.0);
+        assert_eq!(config.up_color[1], 1.0);
+        assert_eq!(config.down_color[0], 1.0);
+    }
 }

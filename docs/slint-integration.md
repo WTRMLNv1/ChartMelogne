@@ -47,6 +47,9 @@ Slint handles the windowing, event routing, and vector overlays (crosshairs, pri
 | `chart_texture` | `image` | `null` | Target texture produced by `ChartRenderer` via `wgpu 30`. |
 | `plot_width` | `length` | `auto` | Read-only alias to plot area width in logical pixels. |
 | `plot_height` | `length` | `auto` | Read-only alias to plot area height in logical pixels. |
+| **`background_color`** | `color` | `#131722` | **Customizable Theme.** Chart background color (tints viewport and axes gutters). |
+| **`up_color`** | `color` | `#089981` | **Customizable Theme.** Bullish (up) candle color, last price badge, and HUD badge. |
+| **`down_color`** | `color` | `#ef5350` | **Customizable Theme.** Bearish (down) candle color, last price badge, and HUD badge. |
 | **`show_axes`** | `bool` | `true` | **Optional.** If `false`, right price axis and bottom time axis collapse to `0px` and the plot occupies 100% of space. |
 | **`chart_type`** | `string` | `"candlestick"` | **Optional / Configurable.** `"candlestick"`, `"line"`, or `"area"`. |
 | **`show_volume`** | `bool` | `true` | **Optional.** Toggles volume histogram and HUD volume display. |
@@ -91,6 +94,11 @@ export component MyTradingApp inherits Window {
             horizontal-stretch: 1;
             vertical-stretch: 1;
             
+            // Custom Theme Colors (Optional)
+            background_color: #0b0e14;      // e.g. custom dark/light background
+            up_color: #00e676;              // custom vibrant green
+            down_color: #ff1744;            // custom vibrant red
+
             // Customize feature flags
             show_axes: true;                // or false for a clean sparkline
             chart_type: "candlestick";      // "candlestick", "line", or "area"
@@ -222,6 +230,32 @@ let ts_marker = ChartMarker::up_at_time(1700000000.0);
 // 4. Pass markers into ChartAppConfig:
 let mut config = ChartAppConfig::default();
 config.markers = vec![buy, second_buy, sell, ts_marker];
+```
+
+---
+
+## Theme & Color Customization
+
+`ChartMelogne` lets host applications customize the background color, bullish (green) candle color, and bearish (red) candle color to seamlessly match any dark or light application theme.
+
+### Configuring in Rust (`ChartAppConfig`)
+
+```rust
+let mut config = ChartAppConfig::default();
+
+// RGBA float arrays [R, G, B, A] normalized in 0.0..1.0
+config.background_color = [0.05, 0.05, 0.05, 1.0]; // Pitch dark background
+config.up_color = [0.0, 0.9, 0.4, 1.0];             // Neon green up candles
+config.down_color = [1.0, 0.2, 0.3, 1.0];           // Neon red down candles
+
+attach_chart_controller!(&app, &config);
+```
+
+### CLI Arguments
+
+When running the standalone chart or dashboard, pass custom hex colors via command line flags:
+```bash
+cargo run --bin chartmelogne -- --bg "#000000" --up-color "#00ff00" --down-color "#ff0000"
 ```
 
 ---

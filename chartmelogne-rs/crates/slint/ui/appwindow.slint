@@ -6,12 +6,17 @@ export component AppWindow inherits Window {
     min-width: 900px;
     min-height: 550px;
     default-font-family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
-    background: #131722;
+    background: root.background_color;
 
     // Viewport image & dimensions (aliased to inner ChartWidget)
     in-out property <image> chart_texture <=> chart.chart_texture;
     in-out property <length> plot_width <=> chart.plot_width;
     in-out property <length> plot_height <=> chart.plot_height;
+
+    // Styling & Theme Colors
+    in-out property <color> background_color <=> chart.background_color;
+    in-out property <color> up_color <=> chart.up_color;
+    in-out property <color> down_color <=> chart.down_color;
 
     // Axis Ticks
     in-out property <[PriceTickUi]> price_ticks <=> chart.price_ticks;
@@ -103,6 +108,11 @@ export component DashboardWindow inherits Window {
     in-out property <image> chart_texture <=> chart.chart_texture;
     in-out property <length> plot_width <=> chart.plot_width;
     in-out property <length> plot_height <=> chart.plot_height;
+
+    // Styling & Theme Colors
+    in-out property <color> background_color <=> chart.background_color;
+    in-out property <color> up_color <=> chart.up_color;
+    in-out property <color> down_color <=> chart.down_color;
 
     // Axis Ticks
     in-out property <[PriceTickUi]> price_ticks <=> chart.price_ticks;
