@@ -108,6 +108,7 @@ export component ChartWidget inherits Rectangle {
 
     // Optional Features & Flags
     in-out property <bool> allow_zoom: true;
+    in-out property <bool> allow_pan: true;
     in-out property <bool> show_axes: true;
     in-out property <string> chart_type: "candlestick";
     in-out property <bool> show_volume: true;
@@ -127,6 +128,7 @@ export component ChartWidget inherits Rectangle {
     callback price_axis_scrolled(length, length); // delta_y, cursor_y
     callback toggle_auto_y();
     callback toggle_allow_zoom(bool);
+    callback toggle_allow_pan(bool);
     callback toggle_show_axes(bool);
     callback toggle_chart_type(string);
     callback toggle_show_volume(bool);
@@ -283,7 +285,11 @@ export component ChartWidget inherits Rectangle {
                         root.pointer_moved(self.mouse-x, self.mouse-y);
                     } else if (event.kind == PointerEventKind.move) {
                         if (self.pressed) {
-                            root.dragged(self.mouse-x, self.mouse-y);
+                            if (root.allow_pan) {
+                                root.dragged(self.mouse-x, self.mouse-y);
+                            } else {
+                                root.pointer_moved(self.mouse-x, self.mouse-y);
+                            }
                         } else {
                             root.pointer_moved(self.mouse-x, self.mouse-y);
                         }
@@ -378,7 +384,17 @@ export component ChartWidget inherits Rectangle {
                         }
                     }
 
-                    // 2. Show axes
+                    // 2. Allow pan
+                    CheckboxMenuItem {
+                        text: "Allow pan";
+                        checked: root.allow_pan;
+                        toggled => {
+                            root.allow_pan = !root.allow_pan;
+                            root.toggle_allow_pan(root.allow_pan);
+                        }
+                    }
+
+                    // 3. Show axes
                     CheckboxMenuItem {
                         text: "Show axes";
                         checked: root.show_axes;

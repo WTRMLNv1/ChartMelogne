@@ -54,6 +54,7 @@ Slint handles the windowing, event routing, and vector overlays (crosshairs, pri
 | `indicators` | `[IndicatorUi]` | `[]` | Dynamic indicator models (`name`, `value`, `color`) displayed in TradingView style HUD. |
 | **`show_markers`** | `bool` | `true` | **Optional.** Toggles visual trade / signal marker triangles. |
 | **`allow_zoom`** | `bool` | `true` | **Optional.** Locks or unlocks mouse wheel and pinch-to-zoom. |
+| **`allow_pan`** | `bool` | `true` | **Optional.** Locks or unlocks click-and-drag panning. |
 | **`show_menu_button`**| `bool`| `true` | **Optional.** Toggles the built-in 3-dot options menu (turn off if your host window has its own toolbar). |
 | **`show_hud`** | `bool` | `true` | **Optional.** Toggles top-left OHLCV badges on cursor hover. |
 | `price_ticks` | `[PriceTickUi]` | `[]` | Dynamic price tick models (`y_px`, `label`). |

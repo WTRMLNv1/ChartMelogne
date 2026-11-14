@@ -15,6 +15,9 @@ OPTIONS:
     --allow-zoom, --zoom              Enable zoom interactions (default)
     --no-zoom, --disable-zoom         Disable zoom interactions
 
+    --allow-pan, --pan                Enable pan interactions (default)
+    --no-pan, --disable-pan           Disable pan interactions
+
     --show-axes, --axes               Show price and time axes (default)
     --no-axes, --hide-axes            Hide price and time axes
 
@@ -56,6 +59,16 @@ fn parse_args() -> (ChartAppConfig, bool) {
             arg if arg.starts_with("--allow-zoom=") => {
                 let val = arg.trim_start_matches("--allow-zoom=");
                 config.allow_zoom = val.parse().unwrap_or(true);
+            }
+            "--allow-pan" | "--pan" => {
+                config.allow_pan = true;
+            }
+            "--no-pan" | "--disable-pan" => {
+                config.allow_pan = false;
+            }
+            arg if arg.starts_with("--allow-pan=") => {
+                let val = arg.trim_start_matches("--allow-pan=");
+                config.allow_pan = val.parse().unwrap_or(true);
             }
             "--show-axes" | "--axes" => {
                 config.show_axes = true;
@@ -139,8 +152,8 @@ fn main() -> Result<(), slint::PlatformError> {
     } else {
         println!("Launching ChartMelogne (Rust + Slint + wgpu 30)...");
         println!(
-            "Options: allow_zoom={}, show_axes={}, chart_type={}, show_volume={}, show_indicators={}",
-            config.allow_zoom, config.show_axes, config.chart_type, config.show_volume, config.show_indicators
+            "Options: allow_zoom={}, allow_pan={}, show_axes={}, chart_type={}, show_volume={}, show_indicators={}",
+            config.allow_zoom, config.allow_pan, config.show_axes, config.chart_type, config.show_volume, config.show_indicators
         );
         run_chart_app(config)
     }
