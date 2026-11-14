@@ -29,6 +29,8 @@ pub struct ChartAppConfig {
     pub background_color: [f32; 4],
     pub up_color: [f32; 4],
     pub down_color: [f32; 4],
+    pub initial_bars_visible: Option<f64>,
+    pub initial_from: Option<f64>,
 }
 
 impl Default for ChartAppConfig {
@@ -77,6 +79,8 @@ impl Default for ChartAppConfig {
             background_color: [0.0745, 0.0902, 0.1333, 1.0], // #131722
             up_color: [0.0314, 0.600, 0.506, 1.0],           // #089981
             down_color: [0.937, 0.325, 0.314, 1.0],         // #ef5350
+            initial_bars_visible: None,
+            initial_from: None,
         }
     }
 }
@@ -169,9 +173,28 @@ macro_rules! attach_chart_controller {
 
         let mut viewport = Viewport::new(chartmelogne_core::viewport::ViewportOptions::default());
         viewport.set_total_bars(count);
-        let initial_bars_visible = 300.0;
-        let initial_from = (count as f64 - initial_bars_visible).max(0.0);
+        let initial_bars_visible = config.initial_bars_visible.unwrap_or_else(|| {
+            let ui_bars = ui.get_visible_bars() as f64;
+            if ui_bars > 10.0 && (ui_bars - 300.0).abs() > 0.01 {
+                ui_bars
+            } else {
+                300.0
+            }
+        });
+        let initial_from = config.initial_from.unwrap_or_else(|| {
+            let ui_from = ui.get_visible_from() as f64;
+            if ui_from > 0.0 {
+                ui_from
+            } else {
+                (count as f64 - initial_bars_visible).max(0.0)
+            }
+        });
         viewport.set_visible_range(initial_from, initial_from + initial_bars_visible);
+        ui.set_visible_bars(viewport.bars_visible as f32);
+        ui.set_visible_from(viewport.from_index as f32);
+        ui.set_visible_to((viewport.from_index + viewport.bars_visible) as f32);
+        ui.set_total_bars(count as f32);
+        ui.set_visible_range_str(format!("{} bars", viewport.bars_visible.round() as usize).into());
 
         let (min, max) = store.get_visible_min_max(viewport.from_index, viewport.from_index + viewport.bars_visible);
         viewport.update_auto_y(min, max, true);
@@ -455,6 +478,203 @@ macro_rules! attach_chart_controller {
             });
         }
 
+        // 14. Navigation & Viewport Range Callbacks
+        {
+            let st_rc = Rc::clone(&state);
+            let ui_handle = ui.as_weak();
+            ui.on_zoom_in(move || {
+                let mut st = st_rc.borrow_mut();
+                if st.allow_zoom {
+                    let center_px = st.viewport.width_px / 2.0;
+                    st.viewport.zoom_at(center_px, 0.8);
+                    let (min_p, max_p) = st.store.get_visible_min_max(st.viewport.from_index, st.viewport.from_index + st.viewport.bars_visible);
+                    st.viewport.update_auto_y(min_p, max_p, true);
+                    st.chart_dirty = true;
+                    if let Some(ui) = ui_handle.upgrade() {
+                        ui.set_visible_bars(st.viewport.bars_visible as f32);
+                        ui.set_visible_from(st.viewport.from_index as f32);
+                        ui.set_visible_to((st.viewport.from_index + st.viewport.bars_visible) as f32);
+                        ui.set_visible_range_str(format!("{} bars", st.viewport.bars_visible.round() as usize).into());
+                        ui.window().request_redraw();
+                    }
+                }
+            });
+        }
+
+        {
+            let st_rc = Rc::clone(&state);
+            let ui_handle = ui.as_weak();
+            ui.on_zoom_out(move || {
+                let mut st = st_rc.borrow_mut();
+                if st.allow_zoom {
+                    let center_px = st.viewport.width_px / 2.0;
+                    st.viewport.zoom_at(center_px, 1.25);
+                    let (min_p, max_p) = st.store.get_visible_min_max(st.viewport.from_index, st.viewport.from_index + st.viewport.bars_visible);
+                    st.viewport.update_auto_y(min_p, max_p, true);
+                    st.chart_dirty = true;
+                    if let Some(ui) = ui_handle.upgrade() {
+                        ui.set_visible_bars(st.viewport.bars_visible as f32);
+                        ui.set_visible_from(st.viewport.from_index as f32);
+                        ui.set_visible_to((st.viewport.from_index + st.viewport.bars_visible) as f32);
+                        ui.set_visible_range_str(format!("{} bars", st.viewport.bars_visible.round() as usize).into());
+                        ui.window().request_redraw();
+                    }
+                }
+            });
+        }
+
+        {
+            let st_rc = Rc::clone(&state);
+            let ui_handle = ui.as_weak();
+            ui.on_reset_zoom(move || {
+                let mut st = st_rc.borrow_mut();
+                let count = st.store.count() as f64;
+                let default_bars = 300.0f64.min(count.max(10.0));
+                let from = (count - default_bars).max(0.0);
+                st.viewport.set_visible_range(from, from + default_bars);
+                st.viewport.y_mode = ViewportMode::Auto;
+                let (min_p, max_p) = st.store.get_visible_min_max(st.viewport.from_index, st.viewport.from_index + st.viewport.bars_visible);
+                st.viewport.update_auto_y(min_p, max_p, true);
+                st.chart_dirty = true;
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.set_auto_y_mode(true);
+                    ui.set_visible_bars(st.viewport.bars_visible as f32);
+                    ui.set_visible_from(st.viewport.from_index as f32);
+                    ui.set_visible_to((st.viewport.from_index + st.viewport.bars_visible) as f32);
+                    ui.set_visible_range_str(format!("{} bars", st.viewport.bars_visible.round() as usize).into());
+                    ui.window().request_redraw();
+                }
+            });
+        }
+
+        {
+            let st_rc = Rc::clone(&state);
+            let ui_handle = ui.as_weak();
+            ui.on_scroll_to_end(move || {
+                let mut st = st_rc.borrow_mut();
+                let count = st.store.count() as f64;
+                let bars = st.viewport.bars_visible;
+                let from = (count - bars).max(0.0);
+                st.viewport.set_visible_range(from, from + bars);
+                let (min_p, max_p) = st.store.get_visible_min_max(st.viewport.from_index, st.viewport.from_index + st.viewport.bars_visible);
+                st.viewport.update_auto_y(min_p, max_p, true);
+                st.chart_dirty = true;
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.set_visible_bars(st.viewport.bars_visible as f32);
+                    ui.set_visible_from(st.viewport.from_index as f32);
+                    ui.set_visible_to((st.viewport.from_index + st.viewport.bars_visible) as f32);
+                    ui.set_visible_range_str(format!("{} bars", st.viewport.bars_visible.round() as usize).into());
+                    ui.window().request_redraw();
+                }
+            });
+        }
+
+        {
+            let st_rc = Rc::clone(&state);
+            let ui_handle = ui.as_weak();
+            ui.on_scroll_to_start(move || {
+                let mut st = st_rc.borrow_mut();
+                let bars = st.viewport.bars_visible;
+                st.viewport.set_visible_range(0.0, bars);
+                let (min_p, max_p) = st.store.get_visible_min_max(st.viewport.from_index, st.viewport.from_index + st.viewport.bars_visible);
+                st.viewport.update_auto_y(min_p, max_p, true);
+                st.chart_dirty = true;
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.set_visible_bars(st.viewport.bars_visible as f32);
+                    ui.set_visible_from(st.viewport.from_index as f32);
+                    ui.set_visible_to((st.viewport.from_index + st.viewport.bars_visible) as f32);
+                    ui.set_visible_range_str(format!("{} bars", st.viewport.bars_visible.round() as usize).into());
+                    ui.window().request_redraw();
+                }
+            });
+        }
+
+        {
+            let st_rc = Rc::clone(&state);
+            let ui_handle = ui.as_weak();
+            ui.on_pan_bars(move |delta_bars| {
+                let mut st = st_rc.borrow_mut();
+                if st.allow_pan {
+                    let px = (delta_bars as f64) * st.viewport.px_per_bar();
+                    st.viewport.pan_by_pixels(-px);
+                    let (min_p, max_p) = st.store.get_visible_min_max(st.viewport.from_index, st.viewport.from_index + st.viewport.bars_visible);
+                    st.viewport.update_auto_y(min_p, max_p, true);
+                    st.chart_dirty = true;
+                    if let Some(ui) = ui_handle.upgrade() {
+                        ui.set_visible_bars(st.viewport.bars_visible as f32);
+                        ui.set_visible_from(st.viewport.from_index as f32);
+                        ui.set_visible_to((st.viewport.from_index + st.viewport.bars_visible) as f32);
+                        ui.set_visible_range_str(format!("{} bars", st.viewport.bars_visible.round() as usize).into());
+                        ui.window().request_redraw();
+                    }
+                }
+            });
+        }
+
+        {
+            let st_rc = Rc::clone(&state);
+            let ui_handle = ui.as_weak();
+            ui.on_set_visible_bars(move |bars| {
+                let mut st = st_rc.borrow_mut();
+                let target_bars = (bars as f64).clamp(10.0, 100_000.0);
+                let right_edge = st.viewport.from_index + st.viewport.bars_visible;
+                let new_from = (right_edge - target_bars).max(0.0);
+                st.viewport.set_visible_range(new_from, new_from + target_bars);
+                let (min_p, max_p) = st.store.get_visible_min_max(st.viewport.from_index, st.viewport.from_index + st.viewport.bars_visible);
+                st.viewport.update_auto_y(min_p, max_p, true);
+                st.chart_dirty = true;
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.set_visible_bars(st.viewport.bars_visible as f32);
+                    ui.set_visible_from(st.viewport.from_index as f32);
+                    ui.set_visible_to((st.viewport.from_index + st.viewport.bars_visible) as f32);
+                    ui.set_visible_range_str(format!("{} bars", st.viewport.bars_visible.round() as usize).into());
+                    ui.window().request_redraw();
+                }
+            });
+        }
+
+        {
+            let st_rc = Rc::clone(&state);
+            let ui_handle = ui.as_weak();
+            ui.on_set_visible_range(move |from, to| {
+                let mut st = st_rc.borrow_mut();
+                let from_clamped = (from as f64).max(0.0);
+                let to_clamped = (to as f64).max(from_clamped + 5.0);
+                st.viewport.set_visible_range(from_clamped, to_clamped);
+                let (min_p, max_p) = st.store.get_visible_min_max(st.viewport.from_index, st.viewport.from_index + st.viewport.bars_visible);
+                st.viewport.update_auto_y(min_p, max_p, true);
+                st.chart_dirty = true;
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.set_visible_bars(st.viewport.bars_visible as f32);
+                    ui.set_visible_from(st.viewport.from_index as f32);
+                    ui.set_visible_to((st.viewport.from_index + st.viewport.bars_visible) as f32);
+                    ui.set_visible_range_str(format!("{} bars", st.viewport.bars_visible.round() as usize).into());
+                    ui.window().request_redraw();
+                }
+            });
+        }
+
+        {
+            let st_rc = Rc::clone(&state);
+            let ui_handle = ui.as_weak();
+            ui.on_set_from_index(move |from| {
+                let mut st = st_rc.borrow_mut();
+                let from_clamped = (from as f64).max(0.0);
+                let bars = st.viewport.bars_visible;
+                st.viewport.set_visible_range(from_clamped, from_clamped + bars);
+                let (min_p, max_p) = st.store.get_visible_min_max(st.viewport.from_index, st.viewport.from_index + st.viewport.bars_visible);
+                st.viewport.update_auto_y(min_p, max_p, true);
+                st.chart_dirty = true;
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.set_visible_bars(st.viewport.bars_visible as f32);
+                    ui.set_visible_from(st.viewport.from_index as f32);
+                    ui.set_visible_to((st.viewport.from_index + st.viewport.bars_visible) as f32);
+                    ui.set_visible_range_str(format!("{} bars", st.viewport.bars_visible.round() as usize).into());
+                    ui.window().request_redraw();
+                }
+            });
+        }
+
         // --- WGPU RENDERING NOTIFIER ---
         {
             let st_rc = Rc::clone(&state);
@@ -549,6 +769,12 @@ macro_rules! attach_chart_controller {
                                 viewport.set_size(phys_w as f64, phys_h as f64, dpr as f64);
                                 let (min_p, max_p) = store.get_visible_min_max(viewport.from_index, viewport.from_index + viewport.bars_visible);
                                 viewport.update_auto_y(min_p, max_p, true);
+
+                                ui.set_visible_bars(viewport.bars_visible as f32);
+                                ui.set_visible_from(viewport.from_index as f32);
+                                ui.set_visible_to((viewport.from_index + viewport.bars_visible) as f32);
+                                ui.set_total_bars(store.count() as f32);
+                                ui.set_visible_range_str(format!("{} bars", viewport.bars_visible.round() as usize).into());
                             }
 
                             let y_min = viewport.y_min;

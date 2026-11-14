@@ -60,7 +60,13 @@ Slint handles the windowing, event routing, and vector overlays (crosshairs, pri
 | **`allow_pan`** | `bool` | `true` | **Optional.** Locks or unlocks click-and-drag panning. |
 | **`show_crosshair`** | `bool` | `true` | **Optional.** Toggles cursor crosshair lines and axis badges when hovering on chart. |
 | **`show_menu_button`**| `bool`| `true` | **Optional.** Toggles the built-in 3-dot options menu (turn off if your host window has its own toolbar). |
+| **`show_navigation_controls`**| `bool`| `true` | **Optional.** Toggles the bottom-left floating quick-navigation toolbar (zoom +/-, reset, latest, visible bars badge). |
 | **`show_hud`** | `bool` | `true` | **Optional.** Toggles top-left OHLCV badges on cursor hover. |
+| **`visible_bars`** | `float` | `300.0` | **Range / Zoom.** Current number of visible candlestick / bar intervals. Read/write from Slint or Rust. |
+| **`visible_from`** | `float` | `0.0` | **Range / Navigation.** Leftmost visible bar index (float to support sub-bar smooth panning). |
+| **`visible_to`** | `float` | `300.0` | **Range / Navigation.** Rightmost visible bar index (`visible_from + visible_bars`). |
+| **`total_bars`** | `float` | `0.0` | Total number of loaded candles in the underlying data store. |
+| **`visible_range_str`**| `string`| `"300 bars"` | Human-readable string badge of the current visible range. |
 | `price_ticks` | `[PriceTickUi]` | `[]` | Dynamic price tick models (`y_px`, `label`). |
 | `time_ticks` | `[TimeTickUi]` | `[]` | Dynamic time tick models (`x_px`, `label`). |
 | `crosshair_active` | `bool` | `false` | True when cursor hovers over the plot. |
@@ -152,9 +158,34 @@ fn main() -> Result<(), slint::PlatformError> {
 
 ### Layout Breakdown
 - **Top Navigation Bar**: Live instrument ticker (`BTC/USDT`), percentage change badge, pill buttons to toggle `Axes ON/OFF`, `Vol ON/OFF`, `Zoom Lock`, and chart type switcher (`Candles` / `Line` / `Area`).
+- **Interactive Range & Zoom/Pan Bar**:
+  - **Presets**: `100b`, `250b`, `500b`, and `All` (zooms and frames the requested number of bars instantly).
+  - **Zoom**: `+` (Zoom In 20%), `-` (Zoom Out 25%).
+  - **Pan**: `◀` (Pan Left 25 bars), `▶` (Pan Right 25 bars).
+  - **Quick Nav**: `Reset` (Fit to default 300 bars with Auto-Y), `Latest` (Scroll directly to most recent candle).
+  - **Badge**: Dynamic pill showing current visible count (e.g. `250 bars`).
+- **Floating Quick Navigation Bar**: An on-chart floating pill bar in the bottom-left with quick `+`, `-`, `◀`, `▶`, `Reset`, and `Latest` actions.
 - **Left Panel (200px)**: Market watchlist with real-time selection highlighting.
 - **Center Panel**: The embedded `ChartWidget` stretching dynamically with window resizing.
 - **Right Panel (220px)**: Live order book ladder with Ask/Bid depth and quick Buy/Sell actions.
+
+### Viewport & Navigation Callbacks
+
+The `ChartWidget` exposes declarative callbacks that your host application or custom UI toolbar can invoke directly:
+
+| Callback | Signature | Description |
+|---|---|---|
+| `zoom_in()` | `callback()` | Zooms in by 20% centered around the viewport midpoint. |
+| `zoom_out()` | `callback()` | Zooms out by 25% centered around the viewport midpoint. |
+| `reset_zoom()` | `callback()` | Resets zoom to default 300 bars and re-enables Auto-Y. |
+| `scroll_to_end()` | `callback()` | Scrolls visible window to the newest bar. |
+| `scroll_to_start()` | `callback()` | Scrolls visible window to the earliest bar (`from = 0.0`). |
+| `pan_bars(delta)` | `callback(float)` | Pans the viewport horizontally by `delta` bars (+ moves right, - moves left). |
+| `set_visible_bars(bars)`| `callback(float)` | Sets exact number of visible bars, keeping right edge anchored. |
+| `set_visible_range(from, to)` | `callback(float, float)` | Sets explicit visible range `[from, to]`. |
+| `set_from_index(from)` | `callback(float)` | Pans viewport so that leftmost visible bar is at `from`. |
+
+All callbacks automatically clamp within valid ranges, update Auto-Y scaling, sync `visible_bars`, `visible_from`, `visible_to`, and `visible_range_str`, and trigger a redraw.
 
 ---
 

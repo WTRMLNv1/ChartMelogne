@@ -60,6 +60,14 @@ export component AppWindow inherits Window {
     in-out property <[IndicatorUi]> indicators <=> chart.indicators;
     in-out property <bool> menu_open <=> chart.menu_open;
 
+    // Viewport Range & Zoom Level
+    in-out property <float> visible_bars <=> chart.visible_bars;
+    in-out property <float> visible_from <=> chart.visible_from;
+    in-out property <float> visible_to <=> chart.visible_to;
+    in-out property <float> total_bars <=> chart.total_bars;
+    in-out property <string> visible_range_str <=> chart.visible_range_str;
+    in-out property <bool> show_navigation_controls <=> chart.show_navigation_controls;
+
     // Callbacks to Rust
     callback pointer_moved(length, length);
     callback pointer_left();
@@ -76,6 +84,17 @@ export component AppWindow inherits Window {
     callback toggle_chart_type(string);
     callback toggle_show_volume(bool);
     callback toggle_show_indicators(bool);
+
+    // Viewport & Navigation Callbacks
+    callback zoom_in();
+    callback zoom_out();
+    callback reset_zoom();
+    callback scroll_to_end();
+    callback scroll_to_start();
+    callback pan_bars(float);
+    callback set_visible_bars(float);
+    callback set_visible_range(float, float);
+    callback set_from_index(float);
 
     // Embedded ChartWidget filling the entire window
     chart := ChartWidget {
@@ -97,6 +116,16 @@ export component AppWindow inherits Window {
         toggle_chart_type(val) => { root.toggle_chart_type(val); }
         toggle_show_volume(val) => { root.toggle_show_volume(val); }
         toggle_show_indicators(val) => { root.toggle_show_indicators(val); }
+
+        zoom_in() => { root.zoom_in(); }
+        zoom_out() => { root.zoom_out(); }
+        reset_zoom() => { root.reset_zoom(); }
+        scroll_to_end() => { root.scroll_to_end(); }
+        scroll_to_start() => { root.scroll_to_start(); }
+        pan_bars(delta) => { root.pan_bars(delta); }
+        set_visible_bars(bars) => { root.set_visible_bars(bars); }
+        set_visible_range(from, to) => { root.set_visible_range(from, to); }
+        set_from_index(from) => { root.set_from_index(from); }
     }
 }
 
@@ -159,6 +188,14 @@ export component DashboardWindow inherits Window {
     in-out property <bool> show_markers <=> chart.show_markers;
     in-out property <[IndicatorUi]> indicators <=> chart.indicators;
 
+    // Viewport Range & Zoom Level
+    in-out property <float> visible_bars <=> chart.visible_bars;
+    in-out property <float> visible_from <=> chart.visible_from;
+    in-out property <float> visible_to <=> chart.visible_to;
+    in-out property <float> total_bars <=> chart.total_bars;
+    in-out property <string> visible_range_str <=> chart.visible_range_str;
+    in-out property <bool> show_navigation_controls <=> chart.show_navigation_controls;
+
     // Callbacks to Rust
     callback pointer_moved(length, length);
     callback pointer_left();
@@ -175,6 +212,17 @@ export component DashboardWindow inherits Window {
     callback toggle_chart_type(string);
     callback toggle_show_volume(bool);
     callback toggle_show_indicators(bool);
+
+    // Viewport & Navigation Callbacks
+    callback zoom_in();
+    callback zoom_out();
+    callback reset_zoom();
+    callback scroll_to_end();
+    callback scroll_to_start();
+    callback pan_bars(float);
+    callback set_visible_bars(float);
+    callback set_visible_range(float, float);
+    callback set_from_index(float);
 
     VerticalLayout {
         padding: 0px;
@@ -411,6 +459,149 @@ export component DashboardWindow inherits Window {
                             }
                         }
                     }
+
+                    // Separator
+                    Rectangle {
+                        width: 1px;
+                        height: 20px;
+                        background: #30363d;
+                    }
+
+                    // Range Presets Label
+                    Text {
+                        text: "Range:";
+                        color: #787b86;
+                        font-size: 11px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+
+                    // Preset: 100b
+                    Rectangle {
+                        width: 44px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: #21262d;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text { text: "100b"; color: #ffffff; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.set_visible_bars(100.0); } }
+                    }
+
+                    // Preset: 250b
+                    Rectangle {
+                        width: 44px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: #21262d;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text { text: "250b"; color: #ffffff; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.set_visible_bars(250.0); } }
+                    }
+
+                    // Preset: 500b
+                    Rectangle {
+                        width: 44px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: #21262d;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text { text: "500b"; color: #ffffff; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.set_visible_bars(500.0); } }
+                    }
+
+                    // Preset: All
+                    Rectangle {
+                        width: 38px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: #21262d;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text { text: "All"; color: #ffffff; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.set_visible_bars(root.total_bars); } }
+                    }
+
+                    // Separator
+                    Rectangle {
+                        width: 1px;
+                        height: 20px;
+                        background: #30363d;
+                    }
+
+                    // Zoom Out Button
+                    Rectangle {
+                        width: 28px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: #21262d;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text { text: "−"; color: #ffffff; font-size: 14px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.zoom_out(); } }
+                    }
+
+                    // Zoom In Button
+                    Rectangle {
+                        width: 28px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: #21262d;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text { text: "+"; color: #ffffff; font-size: 14px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.zoom_in(); } }
+                    }
+
+                    // Pan Left Button
+                    Rectangle {
+                        width: 28px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: #21262d;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text { text: "◀"; color: #d1d4dc; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.pan_bars(-50.0); } }
+                    }
+
+                    // Pan Right Button
+                    Rectangle {
+                        width: 28px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: #21262d;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text { text: "▶"; color: #d1d4dc; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.pan_bars(50.0); } }
+                    }
+
+                    // Reset Zoom Button
+                    Rectangle {
+                        width: 54px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: #21262d;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text { text: "⟲ Reset"; color: #d1d4dc; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.reset_zoom(); } }
+                    }
+
+                    // Jump to Latest Button
+                    Rectangle {
+                        width: 56px;
+                        height: 26px;
+                        border-radius: 4px;
+                        background: #21262d;
+                        border-width: 1px;
+                        border-color: #30363d;
+                        Text { text: "⏭ Latest"; color: #d1d4dc; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                        TouchArea { mouse-cursor: pointer; clicked => { root.scroll_to_end(); } }
+                    }
                 }
             }
         }
@@ -528,6 +719,16 @@ export component DashboardWindow inherits Window {
                 toggle_chart_type(val) => { root.toggle_chart_type(val); }
                 toggle_show_volume(val) => { root.toggle_show_volume(val); }
                 toggle_show_indicators(val) => { root.toggle_show_indicators(val); }
+
+                zoom_in() => { root.zoom_in(); }
+                zoom_out() => { root.zoom_out(); }
+                reset_zoom() => { root.reset_zoom(); }
+                scroll_to_end() => { root.scroll_to_end(); }
+                scroll_to_start() => { root.scroll_to_start(); }
+                pan_bars(delta) => { root.pan_bars(delta); }
+                set_visible_bars(bars) => { root.set_visible_bars(bars); }
+                set_visible_range(from, to) => { root.set_visible_range(from, to); }
+                set_from_index(from) => { root.set_from_index(from); }
             }
 
             // 3. RIGHT SIDEBAR: Order Book Panel (220px)

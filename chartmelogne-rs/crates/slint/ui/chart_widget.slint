@@ -66,6 +66,60 @@ component CheckboxMenuItem inherits Rectangle {
     }
 }
 
+component NavButton inherits Rectangle {
+    in-out property <string> text;
+    callback clicked();
+
+    width: 24px;
+    height: 22px;
+    border-radius: 3px;
+    background: touch.has-hover ? #2a2e39 : transparent;
+
+    Text {
+        text: root.text;
+        color: touch.has-hover ? #ffffff : #d1d4dc;
+        font-size: 12px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component PresetPill inherits Rectangle {
+    in-out property <string> text;
+    callback clicked();
+
+    height: 22px;
+    border-radius: 4px;
+    background: touch.has-hover ? #2a2e39 : #1e222d;
+    border-width: 1px;
+    border-color: #363a45;
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        alignment: center;
+        Text {
+            text: root.text;
+            color: touch.has-hover ? #ffffff : #d1d4dc;
+            font-size: 11px;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
 export component ChartWidget inherits Rectangle {
     background: root.background_color;
     clip: true;
@@ -124,6 +178,14 @@ export component ChartWidget inherits Rectangle {
     in-out property <bool> menu_open: false;
     in-out property <[IndicatorUi]> indicators: [];
 
+    // Viewport Range & Zoom Level
+    in-out property <float> visible_bars: 300.0;
+    in-out property <float> visible_from: 0.0;
+    in-out property <float> visible_to: 300.0;
+    in-out property <float> total_bars: 0.0;
+    in-out property <string> visible_range_str: "300 bars";
+    in-out property <bool> show_navigation_controls: true;
+
     // Callbacks to Rust Controller / Host Window
     callback pointer_moved(length, length);
     callback pointer_left();
@@ -140,6 +202,17 @@ export component ChartWidget inherits Rectangle {
     callback toggle_chart_type(string);
     callback toggle_show_volume(bool);
     callback toggle_show_indicators(bool);
+
+    // Viewport & Navigation Callbacks
+    callback zoom_in();
+    callback zoom_out();
+    callback reset_zoom();
+    callback scroll_to_end();
+    callback scroll_to_start();
+    callback pan_bars(float);
+    callback set_visible_bars(float);
+    callback set_visible_range(float, float);
+    callback set_from_index(float);
 
     // Main layout
     GridLayout {
@@ -311,6 +384,78 @@ export component ChartWidget inherits Rectangle {
                 }
             }
 
+            // 5b. Floating Navigation & Zoom Toolbar
+            if root.show_navigation_controls : Rectangle {
+                x: 12px;
+                y: root.plot_height - 36px;
+                height: 26px;
+                background: #1e222d.with-alpha(0.85);
+                border-radius: 5px;
+                border-width: 1px;
+                border-color: #363a45;
+
+                HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    spacing: 2px;
+                    alignment: center;
+
+                    NavButton {
+                        text: "−";
+                        clicked => { root.zoom_out(); }
+                    }
+
+                    NavButton {
+                        text: "+";
+                        clicked => { root.zoom_in(); }
+                    }
+
+                    Rectangle { width: 1px; height: 16px; background: #363a45; y: 3px; }
+
+                    NavButton {
+                        text: "◀";
+                        clicked => { root.pan_bars(-50.0); }
+                    }
+
+                    NavButton {
+                        text: "▶";
+                        clicked => { root.pan_bars(50.0); }
+                    }
+
+                    Rectangle { width: 1px; height: 16px; background: #363a45; y: 3px; }
+
+                    NavButton {
+                        text: "⟲";
+                        clicked => { root.reset_zoom(); }
+                    }
+
+                    NavButton {
+                        text: "⏭";
+                        clicked => { root.scroll_to_end(); }
+                    }
+
+                    Rectangle { width: 1px; height: 16px; background: #363a45; y: 3px; }
+
+                    Rectangle {
+                        height: 20px;
+                        border-radius: 3px;
+                        background: #2a2e39;
+                        y: 2px;
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 6px;
+                            Text {
+                                text: root.visible_range_str;
+                                color: #9598a1;
+                                font-size: 10px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+
             // 6. Dismiss backdrop when menu is open
             if root.menu_open : TouchArea {
                 width: 100%;
@@ -349,9 +494,9 @@ export component ChartWidget inherits Rectangle {
 
             // 8. Dropdown Menu popup with checkboxes for flags
             if root.show_menu_button && root.menu_open : Rectangle {
-                x: root.plot_width - 200px;
+                x: root.plot_width - 220px;
                 y: 42px;
-                width: 190px;
+                width: 210px;
                 background: #1e222d;
                 border-radius: 6px;
                 border-width: 1px;
@@ -488,6 +633,79 @@ export component ChartWidget inherits Rectangle {
                         toggled => {
                             root.chart_type = "area";
                             root.toggle_chart_type("area");
+                        }
+                    }
+
+                    // Separator
+                    Rectangle {
+                        height: 1px;
+                        background: #2a2e39;
+                    }
+
+                    // Visible Range Presets Header
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        padding-top: 4px;
+                        padding-bottom: 2px;
+                        Text {
+                            text: "Visible Range Presets";
+                            color: #787b86;
+                            font-size: 11px;
+                            font-weight: 700;
+                        }
+                    }
+
+                    // Presets Row
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        spacing: 4px;
+
+                        PresetPill {
+                            text: "50b";
+                            clicked => { root.set_visible_bars(50.0); }
+                        }
+                        PresetPill {
+                            text: "100b";
+                            clicked => { root.set_visible_bars(100.0); }
+                        }
+                        PresetPill {
+                            text: "250b";
+                            clicked => { root.set_visible_bars(250.0); }
+                        }
+                        PresetPill {
+                            text: "500b";
+                            clicked => { root.set_visible_bars(500.0); }
+                        }
+                        PresetPill {
+                            text: "All";
+                            clicked => { root.set_visible_bars(root.total_bars); }
+                        }
+                    }
+
+                    // Navigation Actions Row
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        padding-top: 4px;
+                        spacing: 4px;
+
+                        PresetPill {
+                            text: "Zoom −";
+                            clicked => { root.zoom_out(); }
+                        }
+                        PresetPill {
+                            text: "Zoom +";
+                            clicked => { root.zoom_in(); }
+                        }
+                        PresetPill {
+                            text: "⟲ Reset";
+                            clicked => { root.reset_zoom(); }
+                        }
+                        PresetPill {
+                            text: "Latest ⏭";
+                            clicked => { root.scroll_to_end(); }
                         }
                     }
                 }

@@ -39,6 +39,9 @@ OPTIONS:
     --up-color, --green-color <HEX>   Set bullish / up candle color (e.g. '#089981', '#00ff00')
     --down-color, --red-color <HEX>   Set bearish / down candle color (e.g. '#ef5350', '#ff0000')
 
+    --bars, --visible-bars <N>        Initial number of visible bars (e.g. 100, 300)
+    --from <INDEX>                    Initial starting bar index (e.g. 0, 500)
+
     -h, --help                        Print help information
 "#
     );
@@ -258,6 +261,56 @@ fn parse_args_iter<I: IntoIterator<Item = String>>(iter: I) -> (ChartAppConfig, 
                     }
                 }
             }
+            "--bars" | "--visible-bars" => {
+                if i + 1 < args.len() {
+                    i += 1;
+                    match args[i].parse::<f64>() {
+                        Ok(b) if b > 0.0 => config.initial_bars_visible = Some(b),
+                        _ => {
+                            eprintln!("Error: --bars requires a positive number");
+                            std::process::exit(1);
+                        }
+                    }
+                } else {
+                    eprintln!("Error: --bars requires a positive number");
+                    std::process::exit(1);
+                }
+            }
+            arg if arg.starts_with("--bars=") || arg.starts_with("--visible-bars=") => {
+                let val = arg.split_once('=').map(|(_, v)| v).unwrap_or("");
+                match val.parse::<f64>() {
+                    Ok(b) if b > 0.0 => config.initial_bars_visible = Some(b),
+                    _ => {
+                        eprintln!("Error: --bars requires a positive number");
+                        std::process::exit(1);
+                    }
+                }
+            }
+            "--from" => {
+                if i + 1 < args.len() {
+                    i += 1;
+                    match args[i].parse::<f64>() {
+                        Ok(f) if f >= 0.0 => config.initial_from = Some(f),
+                        _ => {
+                            eprintln!("Error: --from requires a non-negative number");
+                            std::process::exit(1);
+                        }
+                    }
+                } else {
+                    eprintln!("Error: --from requires a non-negative number");
+                    std::process::exit(1);
+                }
+            }
+            arg if arg.starts_with("--from=") => {
+                let val = arg.split_once('=').map(|(_, v)| v).unwrap_or("");
+                match val.parse::<f64>() {
+                    Ok(f) if f >= 0.0 => config.initial_from = Some(f),
+                    _ => {
+                        eprintln!("Error: --from requires a non-negative number");
+                        std::process::exit(1);
+                    }
+                }
+            }
             other => {
                 eprintln!("Warning: unrecognized argument '{other}'. Use --help for available options.");
             }
@@ -329,5 +382,16 @@ mod tests {
 
         let (config, _) = parse_args_iter(vec!["--crosshair".to_string()]);
         assert!(config.show_crosshair);
+    }
+
+    #[test]
+    fn test_bars_and_from_cli_args() {
+        let (config, _) = parse_args_iter(vec!["--bars".to_string(), "150".to_string(), "--from".to_string(), "50".to_string()]);
+        assert_eq!(config.initial_bars_visible, Some(150.0));
+        assert_eq!(config.initial_from, Some(50.0));
+
+        let (config, _) = parse_args_iter(vec!["--visible-bars=200".to_string(), "--from=100".to_string()]);
+        assert_eq!(config.initial_bars_visible, Some(200.0));
+        assert_eq!(config.initial_from, Some(100.0));
     }
 }
