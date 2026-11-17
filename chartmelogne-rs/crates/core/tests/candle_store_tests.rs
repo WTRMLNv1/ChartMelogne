@@ -439,3 +439,99 @@ fn test_marker_registration_and_gpu_instance_conversion() {
     assert_eq!(store.markers().len(), 0);
     assert_eq!(store.get_markers_gpu_instances().len(), 0);
 }
+
+#[test]
+fn test_update_last_extreme_retraction_rescan() {
+    let mut store = CandleStore::new(100, 0);
+    // Append a bar with a high of 100.0 and low of 50.0
+    store.append(Bar {
+        time: 1000.0,
+        open: 60.0,
+        high: 100.0,
+        low: 50.0,
+        close: 70.0,
+        volume: 1000,
+        flags: None,
+    });
+    // Append a second bar with high of 80.0, low of 60.0
+    store.append(Bar {
+        time: 2000.0,
+        open: 70.0,
+        high: 80.0,
+        low: 60.0,
+        close: 75.0,
+        volume: 500,
+        flags: None,
+    });
+
+    let (min1, max1) = store.get_visible_min_max(0.0, 2.0);
+    assert_eq!(min1, 50.0);
+    assert_eq!(max1, 100.0);
+
+    // Now update last bar so that it temporarily sets a new extreme: low 40.0
+    store.update_last(Bar {
+        time: 2000.0,
+        open: 70.0,
+        high: 80.0,
+        low: 40.0,
+        close: 75.0,
+        volume: 500,
+        flags: None,
+    });
+    let (min2, _) = store.get_visible_min_max(0.0, 2.0);
+    assert_eq!(min2, 40.0);
+
+    // Now retract that extreme: update last bar to low 55.0 (which is > bar 0's low of 50.0)
+    store.update_last(Bar {
+        time: 2000.0,
+        open: 70.0,
+        high: 80.0,
+        low: 55.0,
+        close: 75.0,
+        volume: 500,
+        flags: None,
+    });
+    // Block summary should have rescanned and min must now be 50.0, NOT stuck at 40.0!
+    let (min3, _) = store.get_visible_min_max(0.0, 2.0);
+    assert_eq!(min3, 50.0);
+}
+
+#[test]
+fn test_hidden_flag_filtering_in_volume_and_bounds() {
+    let mut store = CandleStore::new(100, 0);
+    store.append(Bar {
+        time: 1000.0,
+        open: 60.0,
+        high: 70.0,
+        low: 50.0,
+        close: 65.0,
+        volume: 100,
+        flags: Some(0),
+    });
+    // Append a hidden bar (flag & 1 != 0) with huge volume and outlier prices
+    store.append(Bar {
+        time: 2000.0,
+        open: 500.0,
+        high: 1000.0,
+        low: 1.0,
+        close: 500.0,
+        volume: 999999,
+        flags: Some(1), // hidden
+    });
+    store.append(Bar {
+        time: 3000.0,
+        open: 65.0,
+        high: 75.0,
+        low: 55.0,
+        close: 70.0,
+        volume: 200,
+        flags: Some(0),
+    });
+
+    let (min, max) = store.get_visible_min_max(0.0, 3.0);
+    assert_eq!(min, 50.0);
+    assert_eq!(max, 75.0);
+
+    let max_vol = store.get_visible_max_volume(0.0, 3.0);
+    assert_eq!(max_vol, 200);
+}

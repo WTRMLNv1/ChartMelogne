@@ -324,6 +324,12 @@ impl CandleStore {
     }
 
     pub fn get_bar(&self, i: usize) -> Bar {
+        assert!(
+            i < self.count,
+            "Index {} out of bounds for CandleStore with count {}",
+            i,
+            self.count
+        );
         let off = i * 4;
         Bar {
             time: self.time[i],
@@ -550,6 +556,7 @@ impl CandleStore {
 
         // Update block min/max summaries
         let b = idx >> 8;
+        let is_hidden = bar.flags.map(|fl| (fl & 1) != 0).unwrap_or(false);
         if b >= self.block_count {
             if b >= self.block_min.len() {
                 let next_cap = 16.max(self.block_min.len() * 2);
@@ -557,11 +564,17 @@ impl CandleStore {
                 self.block_max.resize(next_cap, 0.0);
                 self.block_max_vol.resize(next_cap, 0);
             }
-            self.block_min[b] = bar.low;
-            self.block_max[b] = bar.high;
-            self.block_max_vol[b] = bar.volume;
+            if !is_hidden {
+                self.block_min[b] = bar.low;
+                self.block_max[b] = bar.high;
+                self.block_max_vol[b] = bar.volume;
+            } else {
+                self.block_min[b] = f64::INFINITY;
+                self.block_max[b] = f64::NEG_INFINITY;
+                self.block_max_vol[b] = 0;
+            }
             self.block_count = b + 1;
-        } else {
+        } else if !is_hidden {
             if bar.low < self.block_min[b] {
                 self.block_min[b] = bar.low;
             }
@@ -626,19 +639,23 @@ impl CandleStore {
         }
 
         // Fast-path O(1) block summary update
-        let extreme_retracted = (prev_l == cur_min && bar.low > prev_l)
-            || (prev_h == cur_max && bar.high < prev_h)
+        let is_hidden = bar.flags.map(|fl| (fl & 1) != 0).unwrap_or(false);
+        let extreme_retracted = is_hidden
+            || ((prev_l - cur_min).abs() <= 1e-5 && bar.low > prev_l)
+            || ((prev_h - cur_max).abs() <= 1e-5 && bar.high < prev_h)
             || (prev_v == cur_max_vol && bar.volume < prev_v);
 
         if !extreme_retracted && b < self.block_count {
-            if bar.low < cur_min {
-                self.block_min[b] = bar.low;
-            }
-            if bar.high > cur_max {
-                self.block_max[b] = bar.high;
-            }
-            if bar.volume > cur_max_vol {
-                self.block_max_vol[b] = bar.volume;
+            if !is_hidden {
+                if bar.low < cur_min {
+                    self.block_min[b] = bar.low;
+                }
+                if bar.high > cur_max {
+                    self.block_max[b] = bar.high;
+                }
+                if bar.volume > cur_max_vol {
+                    self.block_max_vol[b] = bar.volume;
+                }
             }
         } else {
             // Fallback: rescan the partial block only if an extreme retracted
@@ -791,6 +808,9 @@ impl CandleStore {
 
         if start_block >= end_block {
             for i in start..end {
+                if (self.flags[i] & 1) != 0 {
+                    continue;
+                }
                 let v = self.volume[i];
                 if v > max_vol {
                     max_vol = v;
@@ -800,6 +820,9 @@ impl CandleStore {
             // Unaligned left fringe
             let left_end = (start_block << 8).min(end);
             for i in start..left_end {
+                if (self.flags[i] & 1) != 0 {
+                    continue;
+                }
                 let v = self.volume[i];
                 if v > max_vol {
                     max_vol = v;
@@ -817,6 +840,9 @@ impl CandleStore {
             // Unaligned right fringe
             let right_start = end_block << 8;
             for i in right_start..end {
+                if (self.flags[i] & 1) != 0 {
+                    continue;
+                }
                 let v = self.volume[i];
                 if v > max_vol {
                     max_vol = v;
