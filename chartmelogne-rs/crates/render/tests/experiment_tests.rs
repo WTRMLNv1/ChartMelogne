@@ -293,3 +293,56 @@ fn test_marker_rendering_pipeline() {
     renderer.clear_markers();
     assert_eq!(renderer.marker_count(), 0);
 }
+
+#[test]
+fn test_render_bounds_safety_when_view_count_exceeds_instances() {
+    let (device, queue) = match common::create_test_device() {
+        Some(dq) => dq,
+        None => {
+            eprintln!("Skipping test: no GPU adapter found");
+            return;
+        }
+    };
+
+    let mut renderer = chartmelogne_render::ChartRenderer::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+    );
+    renderer.resize(200, 200);
+
+    // Only upload 5 bars
+    let ohlc = vec![
+        10.0, 15.0, 8.0, 12.0,
+        12.0, 18.0, 11.0, 16.0,
+        16.0, 17.0, 14.0, 15.0,
+        15.0, 20.0, 13.0, 19.0,
+        19.0, 22.0, 18.0, 21.0,
+    ];
+    renderer.upload_all(&ohlc, 5);
+    assert_eq!(renderer.instance_count(), 5);
+
+    // Pass a view where view.count = 1000 >> renderer.instance_count
+    let view = chartmelogne_render::ViewParams {
+        from_index: 0.0,
+        px_per_bar: 10.0,
+        y_min: 0.0,
+        y_max: 30.0,
+        base_price: 0.0,
+        count: 1000,
+        chart_type: chartmelogne_core::types::ChartType::Candlestick,
+        show_volume: true,
+        ..Default::default()
+    };
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    // This MUST NOT panic with buffer overrun
+    renderer.render(&mut encoder, &view);
+    queue.submit(Some(encoder.finish()));
+
+    // Also test upload with truncated slice does not corrupt instance count
+    let truncated_ohlc = vec![1.0, 2.0];
+    renderer.upload_all(&truncated_ohlc, 10);
+    // Should NOT be 10 because slice was truncated
+    assert_ne!(renderer.instance_count(), 10);
+}

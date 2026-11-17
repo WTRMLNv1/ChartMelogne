@@ -998,8 +998,10 @@ impl ChartRenderer {
             let slice = &ohlc[..count * 4];
             self.queue
                 .write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(slice));
+            self.instance_count = count;
+        } else if count == 0 {
+            self.instance_count = 0;
         }
-        self.instance_count = count;
     }
 
     /// Append a new bar at `index` ([o, h, l, c] relative to base_price).
@@ -1078,8 +1080,10 @@ impl ChartRenderer {
             let slice = &volume_data[..count * 2];
             self.queue
                 .write_buffer(&self.volume_buffer, 0, bytemuck::cast_slice(slice));
+            self.volume_count = count;
+        } else if count == 0 {
+            self.volume_count = 0;
         }
-        self.volume_count = count;
     }
 
     /// Append a volume bar at `index` ([volume, is_up]).
@@ -1167,8 +1171,10 @@ impl ChartRenderer {
                     0,
                     bytemuck::cast_slice(&values_relative[..count]),
                 );
+                ind.count = count;
+            } else if count == 0 {
+                ind.count = 0;
             }
-            ind.count = count;
         } else {
             let uniform_size = std::mem::size_of::<IndicatorUniforms>() as u64;
             let uniform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -1194,13 +1200,16 @@ impl ChartRenderer {
                 mapped_at_creation: false,
             });
 
-            if count > 0 && values_relative.len() >= count {
+            let ind_count = if count > 0 && values_relative.len() >= count {
                 self.queue.write_buffer(
                     &buffer,
                     0,
                     bytemuck::cast_slice(&values_relative[..count]),
                 );
-            }
+                count
+            } else {
+                0
+            };
 
             self.indicators.push(IndicatorGpuBuffer {
                 id: id.to_string(),
@@ -1208,7 +1217,7 @@ impl ChartRenderer {
                 line_width,
                 buffer,
                 capacity: needed_cap,
-                count,
+                count: ind_count,
                 uniform_buffer,
                 bind_group,
             });
@@ -1355,19 +1364,26 @@ impl ChartRenderer {
         };
 
         let first = ((view.from_index - 2.0).floor() as isize).max(0) as u32;
-        let last = ((view.from_index + bars_visible + 2.0).ceil() as isize)
-            .min(view.count as isize - 1)
+
+        let candle_limit = self.instance_count.min(view.count);
+        let candle_last = ((view.from_index + bars_visible + 2.0).ceil() as isize)
+            .min(candle_limit as isize - 1)
             .max(0) as u32;
 
         let should_draw_candles = view.chart_type == chartmelogne_core::types::ChartType::Candlestick
-            && view.count > 0
-            && first <= last
-            && (first as usize) < view.count;
+            && candle_limit > 0
+            && first <= candle_last
+            && (first as usize) < candle_limit;
+
+        let vol_limit = self.volume_count.min(view.count);
+        let vol_last = ((view.from_index + bars_visible + 2.0).ceil() as isize)
+            .min(vol_limit as isize - 1)
+            .max(0) as u32;
 
         let should_draw_volume = view.show_volume
-            && self.volume_count > 0
-            && first <= last
-            && (first as usize) < self.volume_count;
+            && vol_limit > 0
+            && first <= vol_last
+            && (first as usize) < vol_limit;
 
         if should_draw_volume {
             let bar_width = if view.px_per_bar < 3.0 * view.dpr {
@@ -1431,7 +1447,8 @@ impl ChartRenderer {
         }
 
         // --- LINE / AREA PASS SETUP ---
-        let seg_count = if view.count >= 2 { view.count - 1 } else { 0 };
+        let line_limit = self.instance_count.min(view.count);
+        let seg_count = if line_limit >= 2 { line_limit - 1 } else { 0 };
         let last_seg = ((view.from_index + bars_visible + 2.0).ceil() as isize)
             .min(seg_count as isize - 1)
             .max(0) as u32;
@@ -1584,7 +1601,7 @@ impl ChartRenderer {
                 rpass.set_bind_group(0, &self.volume_bind_group, &[]);
                 rpass.set_vertex_buffer(0, self.volume_unit_buffer.slice(..));
                 rpass.set_vertex_buffer(1, self.volume_buffer.slice(..));
-                rpass.draw(0..6, first..(last + 1));
+                rpass.draw(0..6, first..(vol_last + 1));
             }
 
             // 3. Draw Candles
@@ -1593,7 +1610,7 @@ impl ChartRenderer {
                 rpass.set_bind_group(0, &self.uniform_bind_group, &[]);
                 rpass.set_vertex_buffer(0, self.unit_buffer.slice(..));
                 rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-                rpass.draw(0..12, first..(last + 1));
+                rpass.draw(0..12, first..(candle_last + 1));
             }
 
             // 4. Draw Line / Area
