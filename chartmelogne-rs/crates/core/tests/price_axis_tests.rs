@@ -1,4 +1,6 @@
-use chartmelogne_core::{generate_price_ticks, get_nice_price_step, PriceTickOptions};
+use chartmelogne_core::{
+    generate_price_ticks, get_nice_price_step, get_precision, PriceTickOptions,
+};
 
 #[test]
 fn test_nice_steps_follow_1_2_5_x_10_pow_k_pattern() {
@@ -84,5 +86,27 @@ fn test_formats_decimals_cleanly_based_on_step_size() {
     for t in ticks {
         let parsed: f64 = t.label.parse().unwrap();
         assert_eq!(parsed, t.price);
+    }
+}
+
+#[test]
+fn test_get_precision_for_sub_penny_and_crypto_steps() {
+    assert_eq!(get_precision(0.1), 1);
+    assert_eq!(get_precision(0.05), 2);
+    assert_eq!(get_precision(0.001), 3);
+    assert_eq!(get_precision(0.0002), 4);
+    assert_eq!(get_precision(0.00005), 5);
+    assert_eq!(get_precision(0.00001), 5);
+    assert_eq!(get_precision(0.000005), 6);
+    assert_eq!(get_precision(0.0000001), 7);
+    assert_eq!(get_precision(0.00000001), 8);
+
+    // Verify sub-penny ticks format properly without truncating to "0"
+    let ticks = generate_price_ticks(0.00001, 0.00008, 400.0, &PriceTickOptions::default());
+    assert!(!ticks.is_empty());
+    for t in &ticks {
+        assert_ne!(t.label, "0", "Tick label should not be 0 for sub-penny price {}", t.price);
+        let parsed: f64 = t.label.parse().expect("Label should parse to float");
+        assert!((parsed - t.price).abs() < 1e-6);
     }
 }

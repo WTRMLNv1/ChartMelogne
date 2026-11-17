@@ -46,7 +46,7 @@ pub fn get_precision(step: f64) -> usize {
     }
     let mut p = 0usize;
     let mut val = step;
-    while p < 10 && (val - val.round()).abs() > 1e-5 {
+    while p < 10 && (val - val.round()).abs() > (1e-5 * val).max(1e-12) {
         val *= 10.0;
         p += 1;
     }
