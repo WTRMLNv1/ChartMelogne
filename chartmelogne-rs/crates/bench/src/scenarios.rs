@@ -17,6 +17,20 @@ pub struct ScenarioSuiteResult {
 const TARGET_FRAME_DURATION: Duration = Duration::from_micros(16_667); // 60 FPS target
 const SCENARIO_DURATION_MS: f64 = 10_000.0; // 10 seconds
 
+#[inline]
+fn pace_frame(frame_start: Instant) {
+    let render_time = frame_start.elapsed();
+    if render_time < TARGET_FRAME_DURATION {
+        let remaining = TARGET_FRAME_DURATION - render_time;
+        if remaining > Duration::from_millis(2) {
+            std::thread::sleep(remaining - Duration::from_millis(2));
+        }
+        while frame_start.elapsed() < TARGET_FRAME_DURATION {
+            std::hint::spin_loop();
+        }
+    }
+}
+
 pub fn run_scenarios(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -52,9 +66,7 @@ pub fn run_scenarios(
         let render_time = frame_start.elapsed();
         tracker.record_frame_ms(render_time.as_secs_f64() * 1000.0);
 
-        if render_time < TARGET_FRAME_DURATION {
-            std::thread::sleep(TARGET_FRAME_DURATION - render_time);
-        }
+        pace_frame(frame_start);
     }
     let pan_result = tracker.finish("continuous_pan", start_pan.elapsed().as_secs_f64() * 1000.0);
     println!(
@@ -94,9 +106,7 @@ pub fn run_scenarios(
         let render_time = frame_start.elapsed();
         tracker.record_frame_ms(render_time.as_secs_f64() * 1000.0);
 
-        if render_time < TARGET_FRAME_DURATION {
-            std::thread::sleep(TARGET_FRAME_DURATION - render_time);
-        }
+        pace_frame(frame_start);
     }
     let zoom_result = tracker.finish("zoom_sweep", start_zoom.elapsed().as_secs_f64() * 1000.0);
     println!(
@@ -160,9 +170,7 @@ pub fn run_scenarios(
         let render_time = frame_start.elapsed();
         tracker.record_frame_ms(render_time.as_secs_f64() * 1000.0);
 
-        if render_time < TARGET_FRAME_DURATION {
-            std::thread::sleep(TARGET_FRAME_DURATION - render_time);
-        }
+        pace_frame(frame_start);
     }
     let tick_result = tracker.finish("live_tick_100hz", start_tick.elapsed().as_secs_f64() * 1000.0);
     println!(
@@ -215,10 +223,15 @@ pub fn run_scenarios(
                 (bar.close - base_price) as f32,
             ];
             renderer.append(&bar_f32, append_idx);
+            renderer.append_volume(
+                &[bar.volume as f32, if c >= o { 1.0 } else { 0.0 }],
+                append_idx,
+            );
             last_close = c;
         }
 
         view.count = store.count();
+        view.from_index = (store.count() as f32 - 300.0).max(0.0);
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Append Frame Encoder"),
         });
@@ -229,9 +242,7 @@ pub fn run_scenarios(
         let render_time = frame_start.elapsed();
         tracker.record_frame_ms(render_time.as_secs_f64() * 1000.0);
 
-        if render_time < TARGET_FRAME_DURATION {
-            std::thread::sleep(TARGET_FRAME_DURATION - render_time);
-        }
+        pace_frame(frame_start);
     }
     let append_result = tracker.finish("append_bar_1hz", start_append.elapsed().as_secs_f64() * 1000.0);
     println!(

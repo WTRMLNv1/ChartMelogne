@@ -69,7 +69,7 @@ pub fn run_gates(device: &wgpu::Device, queue: &wgpu::Queue) -> GateResults {
     let set_data_cpu_packing_ms =
         (t_pack_start.elapsed().as_secs_f64() * 1000.0 * 100.0).round() / 100.0;
 
-    let view = ViewParams {
+    let mut view = ViewParams {
         from_index,
         px_per_bar,
         y_min: 900.0,
@@ -113,8 +113,11 @@ pub fn run_gates(device: &wgpu::Device, queue: &wgpu::Queue) -> GateResults {
     let store_columns_mb =
         ((mem.store_bytes as f64) / (1024.0 * 1024.0) * 100.0).round() / 100.0;
     let cpu_packed_buffer_mb = 0.0;
+    let candle_vbo_bytes = renderer.instance_capacity() * 16;
+    let volume_vbo_bytes = renderer.volume_capacity() * 8;
+    let texture_bytes = 900 * 550 * 4;
     let gpu_vbo_mb =
-        ((renderer.instance_capacity() * 16) as f64 / (1024.0 * 1024.0) * 100.0).round() / 100.0;
+        (((candle_vbo_bytes + volume_vbo_bytes + texture_bytes) as f64) / (1024.0 * 1024.0) * 100.0).round() / 100.0;
     let total_memory_mb = ((store_columns_mb + gpu_vbo_mb) * 100.0).round() / 100.0;
     let working_set_mb = get_process_working_set_mb();
 
@@ -237,6 +240,8 @@ pub fn run_gates(device: &wgpu::Device, queue: &wgpu::Queue) -> GateResults {
             (bar.close - base_price) as f32,
         ];
         renderer.append(&bar_f32, append_idx);
+        renderer.append_volume(&[bar.volume as f32, if c >= o { 1.0 } else { 0.0 }], append_idx);
+        view.count = store.count();
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Append Encoder"),

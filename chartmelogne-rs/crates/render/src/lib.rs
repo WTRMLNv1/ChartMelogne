@@ -1678,6 +1678,10 @@ impl ChartRenderer {
         self.instance_capacity
     }
 
+    pub fn volume_capacity(&self) -> usize {
+        self.volume_capacity
+    }
+
     pub fn instance_count(&self) -> usize {
         self.instance_count
     }
