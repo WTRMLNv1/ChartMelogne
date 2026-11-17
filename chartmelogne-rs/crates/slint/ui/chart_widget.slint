@@ -351,9 +351,9 @@ export component ChartWidget inherits Rectangle {
                 height: 100%;
                 mouse-cursor: root.show_crosshair ? crosshair : default;
 
-                moved => {
-                    if (self.pressed) {
-                        root.dragged(self.mouse-x, self.mouse-y);
+                changed has-hover => {
+                    if (!self.has-hover) {
+                        root.pointer_left();
                     }
                 }
 
@@ -362,7 +362,11 @@ export component ChartWidget inherits Rectangle {
                         root.drag_started(self.mouse-x, self.mouse-y);
                     } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
                         root.drag_ended();
-                        root.pointer_moved(self.mouse-x, self.mouse-y);
+                        if (self.has-hover) {
+                            root.pointer_moved(self.mouse-x, self.mouse-y);
+                        } else {
+                            root.pointer_left();
+                        }
                     } else if (event.kind == PointerEventKind.move) {
                         if (self.pressed) {
                             if (root.allow_pan) {

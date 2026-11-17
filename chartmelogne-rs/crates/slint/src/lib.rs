@@ -904,9 +904,13 @@ macro_rules! attach_chart_controller {
 
                                     Some(hovered_idx)
                                 } else {
+                                    ui.set_crosshair_active(false);
+                                    ui.set_hud_active(false);
                                     None
                                 }
                             } else {
+                                ui.set_crosshair_active(false);
+                                ui.set_hud_active(false);
                                 None
                             };
 
